@@ -1,6 +1,5 @@
 import MultiNeuron.Relaxation.CrosslayerPolytope
-import MultiNeuron.Results.«Lemma3-2»
-import MultiNeuron.Results.«Theorem3-3»
+import MultiNeuron.Results.auxNets
 
 open Set
 
@@ -13,6 +12,176 @@ noncomputable section
 /-!
 This file formalizes Theorem 4.2 for the cross-layer polytope relaxation.
 -/
+
+/-- Project a set of vectors to the `o`-th coordinate. -/
+def proj {m : Nat} (o : Fin m) (S : Set (Coord m)) : Set Real :=
+  (fun y => y o) '' S
+
+noncomputable def lbproj {m : Nat} (o : Fin m) (S : Set (Coord m)) : Real :=
+  sInf (proj o S)
+
+noncomputable def ubproj {m : Nat} (o : Fin m) (S : Set (Coord m)) : Real :=
+  sSup (proj o S)
+
+/-- Projecting a nonempty set to a coordinate still gives a nonempty set. -/
+theorem proj_nonempty {m : Nat} (o : Fin m) {S : Set (Coord m)} (hS : S.Nonempty) :
+    (proj o S).Nonempty := by
+  rcases hS with ⟨x, hx⟩
+  exact ⟨x o, ⟨x, hx, rfl⟩⟩
+
+/-- The convex hull of a nonempty set is nonempty. -/
+theorem convexHull_nonempty {m : Nat} {S : Set (Coord m)} (hS : S.Nonempty) :
+    (convexHull Real S).Nonempty := by
+  rcases hS with ⟨x, hx⟩
+  exact ⟨x, subset_convexHull Real S hx⟩
+
+namespace Theorem33Polytope
+
+/--
+Corresponds to `f'((ρ W₁ W₀) (X)) ≥ T` in the paper.
+-/
+theorem valleyValue_prefix_ge (T t : Real) (hT : 0 < T) (ht : t ∈ Set.Icc (-1 : Real) 1) :
+    T ≤ valleyValue T (prefixPoint t) := by
+  have hshift : 0 ≤ t + 1 := by linarith [ht.1]
+  rcases le_or_gt t 0 with ht_nonpos | ht_pos
+  · have hmax1 : max t 0 = 0 := max_eq_right ht_nonpos
+    have hmaxShift : max (t + 1) 0 = t + 1 := max_eq_left hshift
+    have hA : max (max (t + 1) 0 - 1) 0 = 0 := by
+      rw [hmaxShift]
+      simpa using hmax1
+    have hB : max (1 - max (t + 1) 0) 0 = -t := by
+      rw [hmaxShift]
+      have : 0 ≤ -t := by linarith
+      simpa [sub_eq_add_neg] using (max_eq_left this : max (-t) 0 = -t)
+    have hC : max (max t 0 - (1 / 2 : Real)) 0 = 0 := by
+      rw [hmax1]
+      norm_num
+    have hD : max ((1 / 2 : Real) - max t 0) 0 = (1 / 2 : Real) := by
+      rw [hmax1]
+      norm_num
+    simp [valleyValue, prefixPoint]
+    have hC' : max (max t 0 - (2⁻¹ : Real)) 0 = 0 := by simpa using hC
+    have hD' : max ((2⁻¹ : Real) - max t 0) 0 = (1 / 2 : Real) := by simpa using hD
+    rw [hA, hB, hC', hD']
+    nlinarith [hT, ht.1]
+  · rcases le_or_gt t (1 / 2 : Real) with ht_le_half | ht_gt_half
+    · have ht_nonneg : 0 ≤ t := le_of_lt ht_pos
+      have hmax1 : max t 0 = t := max_eq_left ht_nonneg
+      have hmaxShift : max (t + 1) 0 = t + 1 := max_eq_left hshift
+      have hA : max (max (t + 1) 0 - 1) 0 = t := by
+        rw [hmaxShift]
+        simpa using hmax1
+      have hB : max (1 - max (t + 1) 0) 0 = 0 := by
+        rw [hmaxShift]
+        have : 1 - (t + 1) ≤ 0 := by linarith
+        simpa using (max_eq_right this : max (1 - (t + 1)) 0 = 0)
+      have hC : max (max t 0 - (1 / 2 : Real)) 0 = 0 := by
+        rw [hmax1]
+        have : t - (1 / 2 : Real) ≤ 0 := by linarith
+        simpa using (max_eq_right this : max (t - (1 / 2 : Real)) 0 = 0)
+      have hD : max ((1 / 2 : Real) - max t 0) 0 = (1 / 2 : Real) - t := by
+        rw [hmax1]
+        have : 0 ≤ (1 / 2 : Real) - t := by linarith
+        simpa using (max_eq_left this : max ((1 / 2 : Real) - t) 0 = (1 / 2 : Real) - t)
+      simp [valleyValue, prefixPoint]
+      have hC' : max (max t 0 - (2⁻¹ : Real)) 0 = 0 := by simpa using hC
+      have hD' : max ((2⁻¹ : Real) - max t 0) 0 = (1 / 2 : Real) - t := by simpa using hD
+      rw [hA, hB, hC', hD']
+      ring_nf
+      linarith
+    · have ht_nonneg : 0 ≤ t := le_of_lt ht_pos
+      have hmax1 : max t 0 = t := max_eq_left ht_nonneg
+      have hmaxShift : max (t + 1) 0 = t + 1 := max_eq_left hshift
+      have hA : max (max (t + 1) 0 - 1) 0 = t := by
+        rw [hmaxShift]
+        simpa using hmax1
+      have hB : max (1 - max (t + 1) 0) 0 = 0 := by
+        rw [hmaxShift]
+        have : 1 - (t + 1) ≤ 0 := by linarith
+        simpa using (max_eq_right this : max (1 - (t + 1)) 0 = 0)
+      have hC : max (max t 0 - (1 / 2 : Real)) 0 = t - (1 / 2 : Real) := by
+        rw [hmax1]
+        have : 0 ≤ t - (1 / 2 : Real) := by linarith
+        simpa using (max_eq_left this : max (t - (1 / 2 : Real)) 0 = t - (1 / 2 : Real))
+      have hD : max ((1 / 2 : Real) - max t 0) 0 = 0 := by
+        rw [hmax1]
+        have : (1 / 2 : Real) - t ≤ 0 := by linarith
+        simpa using (max_eq_right this : max ((1 / 2 : Real) - t) 0 = 0)
+      simp [valleyValue, prefixPoint]
+      have hC' : max (max t 0 - (2⁻¹ : Real)) 0 = t - (1 / 2 : Real) := by simpa using hC
+      have hD' : max ((2⁻¹ : Real) - max t 0) 0 = 0 := by simpa using hD
+      rw [hA, hB, hC', hD']
+      ring_nf
+      nlinarith [hT, ht_gt_half]
+
+/-- If the first-coordinate projection of `X` is `[a,b]`, then every `u ∈ [a,b]` is attained. -/
+theorem exists_mem_of_firstCoord {d : Nat} {X : Polytope (Nat.succ d)} {a b u : Real}
+    (hproj : (fun x : Coord (Nat.succ d) => x 0) '' X.feasibleSet = Set.Icc a b)
+    (hu : u ∈ Set.Icc a b) :
+    ∃ x ∈ X.feasibleSet, x 0 = u := by
+  have hu' : u ∈ (fun x : Coord (Nat.succ d) => x 0) '' X.feasibleSet := by
+    simpa [hproj] using hu
+  rcases hu' with ⟨x, hx, hxu⟩
+  exact ⟨x, hx, hxu⟩
+
+/-- If the first-coordinate projection of `X` is `[a,b]`, then every `x ∈ X` has first coordinate in `[a,b]`. -/
+theorem firstCoord_mem_Icc {d : Nat} {X : Polytope (Nat.succ d)} {a b : Real}
+    (hproj : (fun x : Coord (Nat.succ d) => x 0) '' X.feasibleSet = Set.Icc a b)
+    {x : Coord (Nat.succ d)} (hx : x ∈ X.feasibleSet) :
+    x 0 ∈ Set.Icc a b := by
+  have hx' : x 0 ∈ (fun y : Coord (Nat.succ d) => y 0) '' X.feasibleSet := ⟨x, hx, rfl⟩
+  rw [hproj] at hx'
+  exact hx'
+
+/-- The left endpoint of the broken line lies in the prefix reach set. -/
+theorem leftPoint_in_reach_prefix {d : Nat} {X : Polytope (Nat.succ d)} {a b : Real}
+    (hproj : (fun x : Coord (Nat.succ d) => x 0) '' X.feasibleSet = Set.Icc a b) (hab : a < b) :
+    leftPoint ∈ reach (prefixNet (d := d) a b) X.feasibleSet := by
+  rcases exists_mem_of_firstCoord hproj (by exact ⟨le_rfl, le_of_lt hab⟩) with ⟨x, hxX, hx0⟩
+  refine ⟨x, hxX, ?_⟩
+  ext i
+  fin_cases i
+  · simp [eval_prefixNet, hx0, normalized_left hab, prefixPoint, leftPoint]
+  · simp [eval_prefixNet, hx0, normalized_left hab, prefixPoint, leftPoint]
+
+/-- The right endpoint of the broken line lies in the prefix reach set. -/
+theorem rightPoint_in_reach_prefix {d : Nat} {X : Polytope (Nat.succ d)} {a b : Real}
+    (hproj : (fun x : Coord (Nat.succ d) => x 0) '' X.feasibleSet = Set.Icc a b) (hab : a < b) :
+    rightPoint ∈ reach (prefixNet (d := d) a b) X.feasibleSet := by
+  rcases exists_mem_of_firstCoord hproj (by exact ⟨le_of_lt hab, le_rfl⟩) with ⟨x, hxX, hx0⟩
+  refine ⟨x, hxX, ?_⟩
+  ext i
+  fin_cases i
+  · norm_num [eval_prefixNet, hx0, normalized_right hab, prefixPoint, rightPoint]
+  · norm_num [eval_prefixNet, hx0, normalized_right hab, prefixPoint, rightPoint]
+
+/-- The midpoint of the broken line lies in the convex hull of the prefix reach set. -/
+theorem midPoint_mem_convexHull_reach_prefix {d : Nat} {X : Polytope (Nat.succ d)} {a b : Real}
+    (hproj : (fun x : Coord (Nat.succ d) => x 0) '' X.feasibleSet = Set.Icc a b) (hab : a < b) :
+    midPoint ∈ convexHull Real (reach (prefixNet (d := d) a b) X.feasibleSet) := by
+  have hleft : leftPoint ∈ convexHull Real (reach (prefixNet (d := d) a b) X.feasibleSet) :=
+    subset_convexHull Real _ (leftPoint_in_reach_prefix hproj hab)
+  have hright : rightPoint ∈ convexHull Real (reach (prefixNet (d := d) a b) X.feasibleSet) :=
+    subset_convexHull Real _ (rightPoint_in_reach_prefix hproj hab)
+  have hconv : Convex Real (convexHull Real (reach (prefixNet (d := d) a b) X.feasibleSet)) :=
+    convex_convexHull Real _
+  have hmid' : (1 / 2 : Real) • leftPoint + (1 / 2 : Real) • rightPoint ∈
+      convexHull Real (reach (prefixNet (d := d) a b) X.feasibleSet) := by
+    apply hconv hleft hright <;> norm_num
+  simpa [leftPoint, rightPoint, midPoint] using hmid'
+
+/-- For all `T ≥ 0`, the function computed by `valleyNet` is nonnegative. -/
+theorem exact_valley_nonneg (T : Real) (hT : 0 ≤ T) (y : Coord 2) :
+    0 ≤ eval (valleyNet T) y 0 := by
+  simpa [eval_valleyNet] using valleyValue_nonneg T hT y
+
+/-- For all `T ≥ 0`, the function computed by `negValleyNet` is nonpositive. -/
+theorem exact_negValley_nonpos (T : Real) (hT : 0 ≤ T) (y : Coord 2) :
+    eval (negValleyNet T) y 0 ≤ 0 := by
+  have hnonneg : 0 ≤ valleyValue T y := valleyValue_nonneg T hT y
+  simpa [eval_negValleyNet] using (neg_nonpos.mpr hnonneg : -valleyValue T y ≤ 0)
+
+end Theorem33Polytope
 
 /-- `repeatId n k` is a chain of `k + 1` dummy identity layers on `Coord n`. -/
 def repeatId (n : Nat) : Nat → Net n n
@@ -82,9 +251,10 @@ def repeatIdDecomposition (n r : Nat) (hr : 1 ≤ r) : Nat → BlockDecompositio
 @[simp] theorem repeatIdDecomposition_toNet (n r : Nat) (hr : 1 ≤ r) :
     ∀ k, BlockDecomposition.toNet (repeatIdDecomposition n r hr k) = repeatId n k
   | 0 => by
-      simp [repeatIdDecomposition, repeatId]
+      simp [repeatIdDecomposition, repeatId, BlockDecomposition.toNet]
   | k + 1 => by
-      simp [repeatIdDecomposition, repeatId, repeatIdDecomposition_toNet n r hr k]
+      simp [repeatIdDecomposition, repeatId, BlockDecomposition.toNet,
+        repeatIdDecomposition_toNet n r hr k]
 
 @[simp] theorem blockRelax_idLayer (n : Nat) (X : Set (Coord n)) :
     blockRelax (Net.idLayer n) X = convexHull Real X := by
@@ -133,9 +303,9 @@ def pumpDecomposition {r d d' : Nat}
           (appendDecomposition (repeatIdDecomposition n r hr gap) (.single f hcount)) =
         prependIds f gap
   | 0 => by
-      simp [appendDecomposition, repeatIdDecomposition, prependIds]
+      simp [appendDecomposition, repeatIdDecomposition, prependIds, BlockDecomposition.toNet]
   | gap + 1 => by
-      simp [appendDecomposition, repeatIdDecomposition, prependIds,
+      simp [appendDecomposition, repeatIdDecomposition, prependIds, BlockDecomposition.toNet,
         append_repeatIdDecomposition_single_toNet hr f hcount gap]
 
 @[simp] theorem pumpDecomposition_toNet {r d d' : Nat}
@@ -143,7 +313,8 @@ def pumpDecomposition {r d d' : Nat}
     (f₂ : Net d' 1) (h₂ : layerCount f₂ ≤ r) (gap : Nat) :
     BlockDecomposition.toNet (pumpDecomposition f₁ h₁ f₂ h₂ gap) = pumpNet f₁ f₂ gap := by
   let hr : 1 ≤ r := le_trans (one_le_layerCount f₂) h₂
-  simp [pumpDecomposition, pumpNet, append_repeatIdDecomposition_single_toNet]
+  simp [pumpDecomposition, pumpNet, BlockDecomposition.toNet,
+    append_repeatIdDecomposition_single_toNet]
 
 @[simp] theorem eval_pumpNet {d d' : Nat} (f₁ : Net d d') (f₂ : Net d' 1) (gap : Nat) :
     eval (pumpNet f₁ f₂ gap) = eval (Net.comp f₁ f₂) := by
@@ -294,7 +465,8 @@ theorem theorem42Polytope_lower
   let D : BlockDecomposition (gammaRadius γ (layerCount f)) (Nat.succ d) 1 :=
     pumpDecomposition (prefixNet (d := d) a b) hprefix (valleyNet T) hvalley gap
   refine ⟨f, D, ?_, ?_⟩
-  · simp [D, f, gap, pumpDecomposition, pumpNet]
+  · simpa [D, f] using
+      (pumpDecomposition_toNet (prefixNet (d := d) a b) hprefix (valleyNet T) hvalley gap)
   let exactSet := proj 0 (reach f X.feasibleSet)
   have hXne : X.feasibleSet.Nonempty := by
     rcases Theorem33Polytope.exists_mem_of_firstCoord hproj
@@ -363,7 +535,8 @@ theorem theorem42Polytope_upper
   let D : BlockDecomposition (gammaRadius γ (layerCount g)) (Nat.succ d) 1 :=
     pumpDecomposition (prefixNet (d := d) a b) hprefix (negValleyNet T) hnegValley gap
   refine ⟨g, D, ?_, ?_⟩
-  · simp [D, g, gap, pumpDecomposition, pumpNet]
+  · simpa [D, g] using
+      (pumpDecomposition_toNet (prefixNet (d := d) a b) hprefix (negValleyNet T) hnegValley gap)
   let exactSet := proj 0 (reach g X.feasibleSet)
   have hXne : X.feasibleSet.Nonempty := by
     rcases Theorem33Polytope.exists_mem_of_firstCoord hproj

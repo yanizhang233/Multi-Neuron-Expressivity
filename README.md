@@ -151,8 +151,14 @@ The following table contains the one-to-one correspondence between the lemmata a
 ### 3.5 Lemma4-1.lean
 | Lean | Definition or proof statement |
 | --- | --- |
+|`gammaRadius`|Define the $\max(1, \alpha L)$ in the paper.|
+|`lbPr`|Define the lower bound on some output coordinate returned by $\mathcal{P_r}$. |
+|`ubPr`|Define the upper bound on some output coordinate returned by $\mathcal{P_r}$.|
+|`pumpNet`|Define the operation of pumping dummy layers in the paper. |
+|`PrOutputSetOnPolytope_pumpDecomposition_eq`|Prove that after pumping dummy layers, $\mathcal{P_r}$ computes exactly on the convex hull of the image of the prefix net.|
+|`lemma41`|Prove Lemma 4.1.|
 |||
-|||
+
 ### 3.6 Theorem4-2.lean
 | Lean | Definition or proof statement |
 | --- | --- |

@@ -1,5 +1,4 @@
-import MultiNeuron.Relaxation.Crosslayer
-import MultiNeuron.Results.«Lemma3-2»
+import MultiNeuron.Relaxation.CrosslayerPolytope
 
 open Set
 
@@ -11,6 +10,28 @@ noncomputable section
 This file formalizes a polytope version of Lemma 4.1 using the cross-layer
 polytope backend.
 -/
+
+/-- Project a set of vectors to the `o`-th coordinate. -/
+def proj {m : Nat} (o : Fin m) (S : Set (Coord m)) : Set Real :=
+  (fun y => y o) '' S
+
+noncomputable def lbproj {m : Nat} (o : Fin m) (S : Set (Coord m)) : Real :=
+  sInf (proj o S)
+
+noncomputable def ubproj {m : Nat} (o : Fin m) (S : Set (Coord m)) : Real :=
+  sSup (proj o S)
+
+/-- Projecting a nonempty set to a coordinate still gives a nonempty set. -/
+theorem proj_nonempty {m : Nat} (o : Fin m) {S : Set (Coord m)} (hS : S.Nonempty) :
+    (proj o S).Nonempty := by
+  rcases hS with ⟨x, hx⟩
+  exact ⟨x o, ⟨x, hx, rfl⟩⟩
+
+/-- The convex hull of a nonempty set is nonempty. -/
+theorem convexHull_nonempty {m : Nat} {S : Set (Coord m)} (hS : S.Nonempty) :
+    (convexHull Real S).Nonempty := by
+  rcases hS with ⟨x, hx⟩
+  exact ⟨x, subset_convexHull Real S hx⟩
 
 /-- `repeatId n k` is a chain of `k + 1` dummy identity layers on `Coord n`. -/
 def repeatId (n : Nat) : Nat → Net n n
@@ -80,9 +101,10 @@ def repeatIdDecomposition (n r : Nat) (hr : 1 ≤ r) : Nat → BlockDecompositio
 @[simp] theorem repeatIdDecomposition_toNet (n r : Nat) (hr : 1 ≤ r) :
     ∀ k, BlockDecomposition.toNet (repeatIdDecomposition n r hr k) = repeatId n k
   | 0 => by
-      simp [repeatIdDecomposition, repeatId]
+      simp [repeatIdDecomposition, repeatId, BlockDecomposition.toNet]
   | k + 1 => by
-      simp [repeatIdDecomposition, repeatId, repeatIdDecomposition_toNet n r hr k]
+      simp [repeatIdDecomposition, repeatId, BlockDecomposition.toNet,
+        repeatIdDecomposition_toNet n r hr k]
 
 @[simp] theorem blockRelax_idLayer (n : Nat) (X : Set (Coord n)) :
     blockRelax (Net.idLayer n) X = convexHull Real X := by
@@ -133,9 +155,9 @@ def pumpDecomposition {r d d' : Nat}
           (appendDecomposition (repeatIdDecomposition n r hr gap) (.single f hcount)) =
         prependIds f gap
   | 0 => by
-      simp [appendDecomposition, repeatIdDecomposition, prependIds]
+      simp [appendDecomposition, repeatIdDecomposition, prependIds, BlockDecomposition.toNet]
   | gap + 1 => by
-      simp [appendDecomposition, repeatIdDecomposition, prependIds,
+      simp [appendDecomposition, repeatIdDecomposition, prependIds, BlockDecomposition.toNet,
         append_repeatIdDecomposition_single_toNet hr f hcount gap]
 
 @[simp] theorem pumpDecomposition_toNet {r d d' : Nat}
@@ -143,7 +165,8 @@ def pumpDecomposition {r d d' : Nat}
     (f₂ : Net d' 1) (h₂ : layerCount f₂ ≤ r) (gap : Nat) :
     BlockDecomposition.toNet (pumpDecomposition f₁ h₁ f₂ h₂ gap) = pumpNet f₁ f₂ gap := by
   let hr : 1 ≤ r := le_trans (one_le_layerCount f₂) h₂
-  simp [pumpDecomposition, pumpNet, append_repeatIdDecomposition_single_toNet]
+  simp [pumpDecomposition, pumpNet, BlockDecomposition.toNet,
+    append_repeatIdDecomposition_single_toNet]
 
 @[simp] theorem eval_pumpNet {d d' : Nat} (f₁ : Net d d') (f₂ : Net d' 1) (gap : Nat) :
     eval (pumpNet f₁ f₂ gap) = eval (Net.comp f₁ f₂) := by
@@ -262,7 +285,7 @@ theorem lemma41Polytope_upper
 Combined polytope version of Lemma 4.1 for the explicit-decomposition
 cross-layer relaxation.
 -/
-theorem lemma41Polytope
+theorem lemma41
     {d d' : Nat} (f₁ : Net d d') (f₂ : Net d' 1)
     (X : Polytope d) {r : Nat}
     (h₁ : layerCount f₁ ≤ r) (h₂ : layerCount f₂ ≤ r)
