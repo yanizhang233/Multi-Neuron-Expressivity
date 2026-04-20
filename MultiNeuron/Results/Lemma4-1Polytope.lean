@@ -1,4 +1,4 @@
-import MultiNeuron.Relaxation.CrosslayerPolytope
+import MultiNeuron.Relaxation.Crosslayer
 import MultiNeuron.Results.«Lemma3-2»
 
 open Set
