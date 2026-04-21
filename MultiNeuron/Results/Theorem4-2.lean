@@ -1,265 +1,649 @@
 import MultiNeuron.Results.«Lemma4-1»
-import MultiNeuron.Results.«Theorem3-3»
+import MultiNeuron.Results.auxNets
 
 open Set
 
-namespace MultiNeuron
-
 namespace Net
 
-namespace Theorem42
+namespace Theorem42Polytope
 
 noncomputable section
 
 /-!
-This file formalizes Theorem 4.2 for the current explicit-decomposition
-cross-layer relaxation.
-
-As in `Theorem3-3.lean`, we work with the same semantic substitute for a convex
-polytope: a convex input set whose first-coordinate projection is a nontrivial
-interval.
+This file formalizes the fixed-radius sliding-window version of Theorem 4.2.
 -/
 
-/-- The midpoint witness already lies in the convex hull of the exact prefix reach set. -/
-theorem midPoint_mem_convexHull_reach_prefix
-    {d : Nat} {X : Set (Coord (Nat.succ d))} {a b : Real}
-    (hproj : (fun x : Coord (Nat.succ d) => x 0) '' X = Set.Icc a b) (hab : a < b) :
-    midPoint ∈ convexHull Real (reach (prefixNet (d := d) a b) X) := by
-  have hleft : leftPoint ∈ reach (prefixNet (d := d) a b) X :=
-    Theorem33.leftPoint_in_reach_prefix hproj hab
-  have hright : rightPoint ∈ reach (prefixNet (d := d) a b) X :=
-    Theorem33.rightPoint_in_reach_prefix hproj hab
-  have hmid' : (1 / 2 : Real) • leftPoint + (1 / 2 : Real) • rightPoint ∈
-      convexHull Real (reach (prefixNet (d := d) a b) X) := by
-    apply (convex_convexHull Real _)
-      (subset_convexHull Real _ hleft)
-      (subset_convexHull Real _ hright) <;> norm_num
-  simpa [leftPoint, rightPoint, midPoint] using hmid'
+namespace Theorem33Polytope
 
 /--
-Choosing the pumping gap `⌈3 / γ⌉` guarantees that the resulting
-`max(1, ⌈γ L⌉)` radius is at least `3`.
+Corresponds to `f'((ρ W₁ W₀) (X)) ≥ T` in the paper.
 -/
-theorem three_le_gammaRadius_pumpNet
-    {d d' : Nat} (f₁ : Net d d') (f₂ : Net d' 1) {γ : Real}
-    (hγ : 0 < γ) :
-    3 ≤ gammaRadius γ (syntacticDepth (pumpNet f₁ f₂ (Nat.ceil (3 / γ)))) := by
-  let gap : Nat := Nat.ceil (3 / γ)
-  have hgap_ge : (3 / γ : Real) ≤ gap := by
-    exact (Nat.ceil_le).mp le_rfl
-  have hdepth_nat : gap ≤ syntacticDepth (pumpNet f₁ f₂ gap) := by
-    have : gap ≤ gap + (syntacticDepth f₁ + (1 + syntacticDepth f₂)) :=
-      Nat.le_add_right gap (syntacticDepth f₁ + (1 + syntacticDepth f₂))
-    simpa [pumpNet, syntacticDepth_repeatId, Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
-      this
-  have hdepth_ge' : (gap : Real) ≤ syntacticDepth (pumpNet f₁ f₂ gap) := by
-    exact_mod_cast hdepth_nat
-  have hthree_le_gap : (3 : Real) ≤ γ * gap := by
-    have hmul : γ * (3 / γ) ≤ γ * gap := by
-      exact mul_le_mul_of_nonneg_left hgap_ge (le_of_lt hγ)
-    have hγne : γ ≠ 0 := ne_of_gt hγ
-    have hthree : γ * (3 / γ) = 3 := by
-      field_simp [hγne]
-    simpa [hthree] using hmul
-  have hgap_mul_depth : γ * gap ≤ γ * syntacticDepth (pumpNet f₁ f₂ gap) := by
-    exact mul_le_mul_of_nonneg_left hdepth_ge' (le_of_lt hγ)
-  have hthree_le_depth : (3 : Real) ≤ γ * syntacticDepth (pumpNet f₁ f₂ gap) :=
-    le_trans hthree_le_gap hgap_mul_depth
-  have hceil : γ * syntacticDepth (pumpNet f₁ f₂ gap) ≤
-      (Nat.ceil (γ * syntacticDepth (pumpNet f₁ f₂ gap)) : Real) := by
-    exact (Nat.ceil_le).mp le_rfl
-  have hthree_nat : 3 ≤ Nat.ceil (γ * syntacticDepth (pumpNet f₁ f₂ gap)) := by
-    exact Nat.cast_le.mp (by exact le_trans hthree_le_depth hceil)
-  exact le_trans hthree_nat (Nat.le_max_right _ _)
+theorem valleyValue_prefix_ge (T t : Real) (hT : 0 < T) (ht : t ∈ Set.Icc (-1 : Real) 1) :
+    T ≤ valleyValue T (prefixPoint t) := by
+  have hshift : 0 ≤ t + 1 := by linarith [ht.1]
+  rcases le_or_gt t 0 with ht_nonpos | ht_pos
+  · have hmax1 : max t 0 = 0 := max_eq_right ht_nonpos
+    have hmaxShift : max (t + 1) 0 = t + 1 := max_eq_left hshift
+    have hA : max (max (t + 1) 0 - 1) 0 = 0 := by
+      rw [hmaxShift]
+      simpa using hmax1
+    have hB : max (1 - max (t + 1) 0) 0 = -t := by
+      rw [hmaxShift]
+      have : 0 ≤ -t := by linarith
+      simpa [sub_eq_add_neg] using (max_eq_left this : max (-t) 0 = -t)
+    have hC : max (max t 0 - (1 / 2 : Real)) 0 = 0 := by
+      rw [hmax1]
+      norm_num
+    have hD : max ((1 / 2 : Real) - max t 0) 0 = (1 / 2 : Real) := by
+      rw [hmax1]
+      norm_num
+    simp [valleyValue, prefixPoint]
+    have hC' : max (max t 0 - (2⁻¹ : Real)) 0 = 0 := by simpa using hC
+    have hD' : max ((2⁻¹ : Real) - max t 0) 0 = (1 / 2 : Real) := by simpa using hD
+    rw [hA, hB, hC', hD']
+    nlinarith [hT, ht.1]
+  · rcases le_or_gt t (1 / 2 : Real) with ht_le_half | ht_gt_half
+    · have ht_nonneg : 0 ≤ t := le_of_lt ht_pos
+      have hmax1 : max t 0 = t := max_eq_left ht_nonneg
+      have hmaxShift : max (t + 1) 0 = t + 1 := max_eq_left hshift
+      have hA : max (max (t + 1) 0 - 1) 0 = t := by
+        rw [hmaxShift]
+        simpa using hmax1
+      have hB : max (1 - max (t + 1) 0) 0 = 0 := by
+        rw [hmaxShift]
+        have : 1 - (t + 1) ≤ 0 := by linarith
+        simpa using (max_eq_right this : max (1 - (t + 1)) 0 = 0)
+      have hC : max (max t 0 - (1 / 2 : Real)) 0 = 0 := by
+        rw [hmax1]
+        have : t - (1 / 2 : Real) ≤ 0 := by linarith
+        simpa using (max_eq_right this : max (t - (1 / 2 : Real)) 0 = 0)
+      have hD : max ((1 / 2 : Real) - max t 0) 0 = (1 / 2 : Real) - t := by
+        rw [hmax1]
+        have : 0 ≤ (1 / 2 : Real) - t := by linarith
+        simpa using (max_eq_left this : max ((1 / 2 : Real) - t) 0 = (1 / 2 : Real) - t)
+      simp [valleyValue, prefixPoint]
+      have hC' : max (max t 0 - (2⁻¹ : Real)) 0 = 0 := by simpa using hC
+      have hD' : max ((2⁻¹ : Real) - max t 0) 0 = (1 / 2 : Real) - t := by simpa using hD
+      rw [hA, hB, hC', hD']
+      ring_nf
+      linarith
+    · have ht_nonneg : 0 ≤ t := le_of_lt ht_pos
+      have hmax1 : max t 0 = t := max_eq_left ht_nonneg
+      have hmaxShift : max (t + 1) 0 = t + 1 := max_eq_left hshift
+      have hA : max (max (t + 1) 0 - 1) 0 = t := by
+        rw [hmaxShift]
+        simpa using hmax1
+      have hB : max (1 - max (t + 1) 0) 0 = 0 := by
+        rw [hmaxShift]
+        have : 1 - (t + 1) ≤ 0 := by linarith
+        simpa using (max_eq_right this : max (1 - (t + 1)) 0 = 0)
+      have hC : max (max t 0 - (1 / 2 : Real)) 0 = t - (1 / 2 : Real) := by
+        rw [hmax1]
+        have : 0 ≤ t - (1 / 2 : Real) := by linarith
+        simpa using (max_eq_left this : max (t - (1 / 2 : Real)) 0 = t - (1 / 2 : Real))
+      have hD : max ((1 / 2 : Real) - max t 0) 0 = 0 := by
+        rw [hmax1]
+        have : (1 / 2 : Real) - t ≤ 0 := by linarith
+        simpa using (max_eq_right this : max ((1 / 2 : Real) - t) 0 = 0)
+      simp [valleyValue, prefixPoint]
+      have hC' : max (max t 0 - (2⁻¹ : Real)) 0 = t - (1 / 2 : Real) := by simpa using hC
+      have hD' : max ((2⁻¹ : Real) - max t 0) 0 = 0 := by simpa using hD
+      rw [hA, hB, hC', hD']
+      ring_nf
+      nlinarith [hT, ht_gt_half]
 
-theorem theorem42_lower
-    {d : Nat} {X : Set (Coord (Nat.succ d))} {a b γ T : Real}
-    (_hXconv : Convex Real X)
-    (hproj : (fun x : Coord (Nat.succ d) => x 0) '' X = Set.Icc a b)
-    (hab : a < b) (hγ : 0 < γ) (_hγ' : γ < 1) (hT : 0 < T) :
+/-- If the first-coordinate projection of `X` is `[a,b]`, then every `u ∈ [a,b]` is attained. -/
+theorem exists_mem_of_firstCoord {d : Nat} {X : Polytope (Nat.succ d)} {a b u : Real}
+    (hproj : (fun x : Coord (Nat.succ d) => x 0) '' X.feasibleSet = Set.Icc a b)
+    (hu : u ∈ Set.Icc a b) :
+    ∃ x ∈ X.feasibleSet, x 0 = u := by
+  have hu' : u ∈ (fun x : Coord (Nat.succ d) => x 0) '' X.feasibleSet := by
+    simpa [hproj] using hu
+  rcases hu' with ⟨x, hx, hxu⟩
+  exact ⟨x, hx, hxu⟩
+
+/-- If the first-coordinate projection of `X` is `[a,b]`, then every `x ∈ X` has first coordinate in `[a,b]`. -/
+theorem firstCoord_mem_Icc {d : Nat} {X : Polytope (Nat.succ d)} {a b : Real}
+    (hproj : (fun x : Coord (Nat.succ d) => x 0) '' X.feasibleSet = Set.Icc a b)
+    {x : Coord (Nat.succ d)} (hx : x ∈ X.feasibleSet) :
+    x 0 ∈ Set.Icc a b := by
+  have hx' : x 0 ∈ (fun y : Coord (Nat.succ d) => y 0) '' X.feasibleSet := ⟨x, hx, rfl⟩
+  rw [hproj] at hx'
+  exact hx'
+
+/-- The left endpoint of the broken line lies in the prefix reach set. -/
+theorem leftPoint_in_reach_prefix {d : Nat} {X : Polytope (Nat.succ d)} {a b : Real}
+    (hproj : (fun x : Coord (Nat.succ d) => x 0) '' X.feasibleSet = Set.Icc a b) (hab : a < b) :
+    leftPoint ∈ reach (prefixNet (d := d) a b) X.feasibleSet := by
+  rcases exists_mem_of_firstCoord hproj (by exact ⟨le_rfl, le_of_lt hab⟩) with ⟨x, hxX, hx0⟩
+  refine ⟨x, hxX, ?_⟩
+  ext i
+  fin_cases i
+  · simp [eval_prefixNet, hx0, normalized_left hab, prefixPoint, leftPoint]
+  · simp [eval_prefixNet, hx0, normalized_left hab, prefixPoint, leftPoint]
+
+/-- The right endpoint of the broken line lies in the prefix reach set. -/
+theorem rightPoint_in_reach_prefix {d : Nat} {X : Polytope (Nat.succ d)} {a b : Real}
+    (hproj : (fun x : Coord (Nat.succ d) => x 0) '' X.feasibleSet = Set.Icc a b) (hab : a < b) :
+    rightPoint ∈ reach (prefixNet (d := d) a b) X.feasibleSet := by
+  rcases exists_mem_of_firstCoord hproj (by exact ⟨le_of_lt hab, le_rfl⟩) with ⟨x, hxX, hx0⟩
+  refine ⟨x, hxX, ?_⟩
+  ext i
+  fin_cases i
+  · norm_num [eval_prefixNet, hx0, normalized_right hab, prefixPoint, rightPoint]
+  · norm_num [eval_prefixNet, hx0, normalized_right hab, prefixPoint, rightPoint]
+
+/-- The midpoint of the broken line lies in the convex hull of the prefix reach set. -/
+theorem midPoint_mem_convexHull_reach_prefix {d : Nat} {X : Polytope (Nat.succ d)} {a b : Real}
+    (hproj : (fun x : Coord (Nat.succ d) => x 0) '' X.feasibleSet = Set.Icc a b) (hab : a < b) :
+    midPoint ∈ convexHull Real (reach (prefixNet (d := d) a b) X.feasibleSet) := by
+  have hleft : leftPoint ∈ convexHull Real (reach (prefixNet (d := d) a b) X.feasibleSet) :=
+    subset_convexHull Real _ (leftPoint_in_reach_prefix hproj hab)
+  have hright : rightPoint ∈ convexHull Real (reach (prefixNet (d := d) a b) X.feasibleSet) :=
+    subset_convexHull Real _ (rightPoint_in_reach_prefix hproj hab)
+  have hconv : Convex Real (convexHull Real (reach (prefixNet (d := d) a b) X.feasibleSet)) :=
+    convex_convexHull Real _
+  have hmid' : (1 / 2 : Real) • leftPoint + (1 / 2 : Real) • rightPoint ∈
+      convexHull Real (reach (prefixNet (d := d) a b) X.feasibleSet) := by
+    apply hconv hleft hright <;> norm_num
+  simpa [leftPoint, rightPoint, midPoint] using hmid'
+
+/-- For all `T ≥ 0`, the function computed by `valleyNet` is nonnegative. -/
+theorem exact_valley_nonneg (T : Real) (hT : 0 ≤ T) (y : Coord 2) :
+    0 ≤ eval (valleyNet T) y 0 := by
+  simpa [eval_valleyNet] using valleyValue_nonneg T hT y
+
+/-- For all `T ≥ 0`, the function computed by `negValleyNet` is nonpositive. -/
+theorem exact_negValley_nonpos (T : Real) (hT : 0 ≤ T) (y : Coord 2) :
+    eval (negValleyNet T) y 0 ≤ 0 := by
+  have hnonneg : 0 ≤ valleyValue T y := valleyValue_nonneg T hT y
+  simpa [eval_negValleyNet] using (neg_nonpos.mpr hnonneg : -valleyValue T y ≤ 0)
+
+end Theorem33Polytope
+
+/--
+Fixed-radius sliding-window lower-bound half of Theorem 4.2.
+-/
+theorem theorem42_lower_fixedr
+    {d : Nat} (X : Polytope (Nat.succ d)) {a b T : Real} {r : Nat}
+    (hr : 0 < r) (hr3 : 3 ≤ r)
+    (hproj : (fun x : Coord (Nat.succ d) => x 0) '' X.feasibleSet = Set.Icc a b)
+    (hab : a < b) (hT : 0 < T)
+    (hglue :
+      PumpGlueCondition hr (prefixNet (d := d) a b) (valleyNet T) X.feasibleSet)
+    (hPr_bdd :
+      Bornology.IsBounded
+        (PrOutputSetOnPolytope hr
+          (pumpNetPr (prefixNet (d := d) a b) (valleyNet T) r) X)) :
     ∃ f : Net (Nat.succ d) 1,
-      ∃ D : BlockDecomposition (gammaRadius γ (syntacticDepth f)) (Nat.succ d) 1,
-        BlockDecomposition.toNet D = f ∧
-        lbPr D X 0 ≤ sInf (coordImage 0 (reach f X)) - T := by
-  let gap : Nat := Nat.ceil (3 / γ)
+      lbPrActual hr f X 0 ≤ lbproj 0 (reach f X.feasibleSet) - T := by
   let f : Net (Nat.succ d) 1 :=
-    pumpNet (prefixNet (d := d) a b) (valleyNet T) gap
-  have hr : 3 ≤ gammaRadius γ (syntacticDepth f) := by
-    simpa [f, gap] using
-      (three_le_gammaRadius_pumpNet (prefixNet (d := d) a b) (valleyNet T) hγ)
-  have hprefix : layerCount (prefixNet (d := d) a b) ≤ gammaRadius γ (syntacticDepth f) := by
-    simpa [prefixNet, normalizeNet, liftNet, f, gap] using hr
-  have hvalley : layerCount (valleyNet T) ≤ gammaRadius γ (syntacticDepth f) := by
-    simpa [valleyNet, diffNet, sumNet, f, gap] using hr
-  let D : BlockDecomposition (gammaRadius γ (syntacticDepth f)) (Nat.succ d) 1 :=
-    pumpDecomposition (prefixNet (d := d) a b) hprefix (valleyNet T) hvalley gap
-  refine ⟨f, D, ?_, ?_⟩
-  · simp [D, f, gap, pumpDecomposition, pumpNet]
-  let exactSet := coordImage 0 (reach f X)
-  let relaxSet := coordImage 0 (PrRelax D X)
-  have hXne : X.Nonempty := by
-    rcases Theorem33.exists_mem_of_firstCoord hproj (by exact ⟨le_rfl, le_of_lt hab⟩) with
-      ⟨x, hx, _⟩
+    pumpNetPr (prefixNet (d := d) a b) (valleyNet T) r
+  have hprefix : layerCount (prefixNet (d := d) a b) ≤ r := by
+    simpa [prefixNet, normalize1DNet, liftNet] using hr3
+  have hvalley : layerCount (valleyNet T) ≤ r := by
+    simpa [valleyNet, absNet, sumNet] using hr3
+  refine ⟨f, ?_⟩
+  let exactSet := proj 0 (reach f X.feasibleSet)
+  have hXne : X.feasibleSet.Nonempty := by
+    rcases Theorem33Polytope.exists_mem_of_firstCoord hproj
+      (by exact ⟨le_rfl, le_of_lt hab⟩) with ⟨x, hx, _⟩
     exact ⟨x, hx⟩
   have hexact_nonempty : exactSet.Nonempty := by
-    apply coordImage_nonempty 0
+    apply proj_nonempty 0
     exact reach_nonempty f hXne
-  have hExact_ge : ∀ r ∈ exactSet, T ≤ r := by
-    intro r hr
-    rcases hr with ⟨y, hy, rfl⟩
-    have hy' : y ∈ reach (lowerCounterexample (d := d) a b T) X := by
-      simpa [exactSet, D, f, gap, lowerCounterexample] using hy
+  have hExact_ge : ∀ s ∈ exactSet, T ≤ s := by
+    intro s hs
+    rcases hs with ⟨y, hy, rfl⟩
+    have hy' : y ∈ reach (lowerCounterexample (d := d) a b T) X.feasibleSet := by
+      simpa [exactSet, f, lowerCounterexample] using hy
     rcases hy' with ⟨x, hxX, rfl⟩
-    have hx0 : x 0 ∈ Set.Icc a b := Theorem33.firstCoord_mem_Icc hproj hxX
+    have hx0 : x 0 ∈ Set.Icc a b := Theorem33Polytope.firstCoord_mem_Icc hproj hxX
     have hnorm : normalized a b (x 0) ∈ Set.Icc (-1 : Real) 1 :=
       normalized_mem_Icc hab hx0
     simpa [lowerCounterexample, eval_valleyNet, eval_prefixNet] using
-      valleyValue_prefix_ge T (normalized a b (x 0)) hT hnorm
-  have hmin_ge : T ≤ sInf exactSet := le_csInf hexact_nonempty hExact_ge
-  have hmid : midPoint ∈ convexHull Real (reach (prefixNet (d := d) a b) X) :=
-    midPoint_mem_convexHull_reach_prefix hproj hab
-  have hzero_mem : (0 : Real) ∈ relaxSet := by
-    have hreach_mid : (((fun _ : Fin 1 => (0 : Real)) : Coord 1)) ∈
-        reach (valleyNet T) (convexHull Real (reach (prefixNet (d := d) a b) X)) := by
-      refine ⟨midPoint, hmid, ?_⟩
-      ext i
-      fin_cases i
-      simp [eval_valleyNet, valleyValue_at_midPoint]
-    have hrel_mid : (((fun _ : Fin 1 => (0 : Real)) : Coord 1)) ∈ PrRelax D X := by
-      rw [PrRelax_pumpDecomposition_eq]
-      exact subset_convexHull Real _ hreach_mid
-    exact ⟨((fun _ : Fin 1 => (0 : Real)) : Coord 1), hrel_mid, rfl⟩
-  let K : Set (Coord 1) := {y | 0 ≤ y 0}
-  have hK_conv : Convex Real K := by
-    intro y hy z hz α β hα hβ hαβ
-    dsimp [K] at hy hz ⊢
-    nlinarith
-  have hreach_nonneg :
-      reach (valleyNet T) (convexHull Real (reach (prefixNet (d := d) a b) X)) ⊆ K := by
-    intro y hy
-    rcases hy with ⟨z, -, rfl⟩
-    dsimp [K]
-    simpa [eval_valleyNet] using valleyValue_nonneg T (le_of_lt hT) z
-  have hrel_bddBelow : BddBelow relaxSet := by
+      Theorem33Polytope.valleyValue_prefix_ge T (normalized a b (x 0)) hT hnorm
+  have hmin_ge : T ≤ lbproj 0 (reach f X.feasibleSet) := by
+    simpa [lbproj, exactSet] using le_csInf hexact_nonempty hExact_ge
+  have hlemma :
+      lbPrActual hr f X 0 ≤
+        lbproj 0 (reach (valleyNet T)
+          (convexHull Real (reach (prefixNet (d := d) a b) X.feasibleSet))) := by
+    simpa [f] using
+      lemma41_fixedr_lower (prefixNet (d := d) a b) (valleyNet T) X hr
+        hprefix hvalley hXne hglue hPr_bdd
+  have hreach_mid : (![(0 : Real)] : Coord 1) ∈
+      reach (valleyNet T)
+        (convexHull Real (reach (prefixNet (d := d) a b) X.feasibleSet)) := by
+    refine ⟨midPoint, Theorem33Polytope.midPoint_mem_convexHull_reach_prefix hproj hab, ?_⟩
+    ext i
+    fin_cases i
+    simp [eval_valleyNet, valleyValue_at_midPoint]
+  have hzero_mem : (0 : Real) ∈
+      proj 0 (reach (valleyNet T)
+        (convexHull Real (reach (prefixNet (d := d) a b) X.feasibleSet))) := by
+    exact ⟨![0], hreach_mid, rfl⟩
+  have hconv_bddBelow : BddBelow
+      (proj 0 (reach (valleyNet T)
+        (convexHull Real (reach (prefixNet (d := d) a b) X.feasibleSet)))) := by
     refine ⟨0, ?_⟩
-    intro r hr
-    rcases hr with ⟨y, hy, rfl⟩
-    have hyK : y ∈ K := by
-      rw [PrRelax_pumpDecomposition_eq] at hy
-      exact convexHull_min hreach_nonneg hK_conv hy
-    simpa [K] using hyK
-  have hlb_le_zero : lbPr D X 0 ≤ 0 := by
-    simpa [lbPr, relaxSet] using csInf_le hrel_bddBelow hzero_mem
-  linarith
-
-theorem theorem42_upper
-    {d : Nat} {X : Set (Coord (Nat.succ d))} {a b γ T : Real}
-    (_hXconv : Convex Real X)
-    (hproj : (fun x : Coord (Nat.succ d) => x 0) '' X = Set.Icc a b)
-    (hab : a < b) (hγ : 0 < γ) (_hγ' : γ < 1) (hT : 0 < T) :
-    ∃ g : Net (Nat.succ d) 1,
-      ∃ D : BlockDecomposition (gammaRadius γ (syntacticDepth g)) (Nat.succ d) 1,
-        BlockDecomposition.toNet D = g ∧
-        sSup (coordImage 0 (reach g X)) + T ≤ ubPr D X 0 := by
-  let gap : Nat := Nat.ceil (3 / γ)
-  let g : Net (Nat.succ d) 1 :=
-    pumpNet (prefixNet (d := d) a b) (negValleyNet T) gap
-  have hr : 3 ≤ gammaRadius γ (syntacticDepth g) := by
-    simpa [g, gap] using
-      (three_le_gammaRadius_pumpNet (prefixNet (d := d) a b) (negValleyNet T) hγ)
-  have hprefix : layerCount (prefixNet (d := d) a b) ≤ gammaRadius γ (syntacticDepth g) := by
-    simpa [prefixNet, normalizeNet, liftNet, g, gap] using hr
-  have hnegValley : layerCount (negValleyNet T) ≤ gammaRadius γ (syntacticDepth g) := by
-    simpa [negValleyNet, diffNet, sumNet, g, gap] using hr
-  let D : BlockDecomposition (gammaRadius γ (syntacticDepth g)) (Nat.succ d) 1 :=
-    pumpDecomposition (prefixNet (d := d) a b) hprefix (negValleyNet T) hnegValley gap
-  refine ⟨g, D, ?_, ?_⟩
-  · simp [D, g, gap, pumpDecomposition, pumpNet]
-  let exactSet := coordImage 0 (reach g X)
-  let relaxSet := coordImage 0 (PrRelax D X)
-  have hXne : X.Nonempty := by
-    rcases Theorem33.exists_mem_of_firstCoord hproj (by exact ⟨le_rfl, le_of_lt hab⟩) with
-      ⟨x, hx, _⟩
-    exact ⟨x, hx⟩
-  have hexact_nonempty : exactSet.Nonempty := by
-    apply coordImage_nonempty 0
-    exact reach_nonempty g hXne
-  have hExact_le : ∀ r ∈ exactSet, r ≤ -T := by
-    intro r hr
-    rcases hr with ⟨y, hy, rfl⟩
-    have hy' : y ∈ reach (upperCounterexample (d := d) a b T) X := by
-      simpa [exactSet, D, g, gap, upperCounterexample] using hy
-    rcases hy' with ⟨x, hxX, rfl⟩
-    have hx0 : x 0 ∈ Set.Icc a b := Theorem33.firstCoord_mem_Icc hproj hxX
-    have hnorm : normalized a b (x 0) ∈ Set.Icc (-1 : Real) 1 :=
-      normalized_mem_Icc hab hx0
-    have hge : T ≤ valleyValue T (prefixPoint (normalized a b (x 0))) :=
-      valleyValue_prefix_ge T (normalized a b (x 0)) hT hnorm
-    have hneg : -valleyValue T (prefixPoint (normalized a b (x 0))) ≤ -T := by
-      linarith
-    simpa [upperCounterexample, eval_negValleyNet, eval_prefixNet] using hneg
-  have hmax_le : sSup exactSet ≤ -T := csSup_le hexact_nonempty hExact_le
-  have hmid : midPoint ∈ convexHull Real (reach (prefixNet (d := d) a b) X) :=
-    midPoint_mem_convexHull_reach_prefix hproj hab
-  have hzero_mem : (0 : Real) ∈ relaxSet := by
-    have hreach_mid : (((fun _ : Fin 1 => (0 : Real)) : Coord 1)) ∈
-        reach (negValleyNet T) (convexHull Real (reach (prefixNet (d := d) a b) X)) := by
-      refine ⟨midPoint, hmid, ?_⟩
-      ext i
-      fin_cases i
-      simp [eval_negValleyNet, valleyValue_at_midPoint]
-    have hrel_mid : (((fun _ : Fin 1 => (0 : Real)) : Coord 1)) ∈ PrRelax D X := by
-      rw [PrRelax_pumpDecomposition_eq]
-      exact subset_convexHull Real _ hreach_mid
-    exact ⟨((fun _ : Fin 1 => (0 : Real)) : Coord 1), hrel_mid, rfl⟩
-  let K : Set (Coord 1) := {y | y 0 ≤ 0}
-  have hK_conv : Convex Real K := by
-    intro y hy z hz α β hα hβ hαβ
-    dsimp [K] at hy hz ⊢
-    nlinarith
-  have hreach_nonpos :
-      reach (negValleyNet T) (convexHull Real (reach (prefixNet (d := d) a b) X)) ⊆ K := by
-    intro y hy
-    rcases hy with ⟨z, -, rfl⟩
-    dsimp [K]
-    have hnonneg : 0 ≤ valleyValue T z := valleyValue_nonneg T (le_of_lt hT) z
-    simpa [eval_negValleyNet] using (neg_nonpos.mpr hnonneg)
-  have hrel_bddAbove : BddAbove relaxSet := by
-    refine ⟨0, ?_⟩
-    intro r hr
-    rcases hr with ⟨y, hy, rfl⟩
-    have hyK : y ∈ K := by
-      rw [PrRelax_pumpDecomposition_eq] at hy
-      exact convexHull_min hreach_nonpos hK_conv hy
-    simpa [K] using hyK
-  have hzero_le_ub : 0 ≤ ubPr D X 0 := by
-    simpa [ubPr, relaxSet] using le_csSup hrel_bddAbove hzero_mem
+    intro s hs
+    rcases hs with ⟨y, hy, rfl⟩
+    rcases hy with ⟨z, hz, rfl⟩
+    exact Theorem33Polytope.exact_valley_nonneg T (le_of_lt hT) z
+  have hlb_le_zero :
+      lbproj 0 (reach (valleyNet T)
+        (convexHull Real (reach (prefixNet (d := d) a b) X.feasibleSet))) ≤ 0 := by
+    simpa [lbproj, proj] using csInf_le hconv_bddBelow hzero_mem
+  have hlbPr_le_zero : lbPrActual hr f X 0 ≤ 0 := le_trans hlemma hlb_le_zero
   linarith
 
 /--
-Semantic version of Theorem 4.2 for the explicit-decomposition cross-layer
-relaxation.
+Fixed-radius sliding-window upper-bound half of Theorem 4.2.
 -/
-theorem theorem42
-    {d : Nat} {X : Set (Coord (Nat.succ d))} {a b γ T : Real}
-    (hXconv : Convex Real X)
-    (hproj : (fun x : Coord (Nat.succ d) => x 0) '' X = Set.Icc a b)
-    (hab : a < b) (hγ : 0 < γ) (hγ' : γ < 1) (hT : 0 < T) :
+theorem theorem42_upper_fixedr
+    {d : Nat} (X : Polytope (Nat.succ d)) {a b T : Real} {r : Nat}
+    (hr : 0 < r) (hr3 : 3 ≤ r)
+    (hproj : (fun x : Coord (Nat.succ d) => x 0) '' X.feasibleSet = Set.Icc a b)
+    (hab : a < b) (hT : 0 < T)
+    (hglue :
+      PumpGlueCondition hr (prefixNet (d := d) a b) (negValleyNet T) X.feasibleSet)
+    (hPr_bdd :
+      Bornology.IsBounded
+        (PrOutputSetOnPolytope hr
+          (pumpNetPr (prefixNet (d := d) a b) (negValleyNet T) r) X)) :
+    ∃ g : Net (Nat.succ d) 1,
+      ubproj 0 (reach g X.feasibleSet) + T ≤ ubPrActual hr g X 0 := by
+  let g : Net (Nat.succ d) 1 :=
+    pumpNetPr (prefixNet (d := d) a b) (negValleyNet T) r
+  have hprefix : layerCount (prefixNet (d := d) a b) ≤ r := by
+    simpa [prefixNet, normalize1DNet, liftNet] using hr3
+  have hnegValley : layerCount (negValleyNet T) ≤ r := by
+    simpa [negValleyNet, absNet, sumNet] using hr3
+  refine ⟨g, ?_⟩
+  let exactSet := proj 0 (reach g X.feasibleSet)
+  have hXne : X.feasibleSet.Nonempty := by
+    rcases Theorem33Polytope.exists_mem_of_firstCoord hproj
+      (by exact ⟨le_rfl, le_of_lt hab⟩) with ⟨x, hx, _⟩
+    exact ⟨x, hx⟩
+  have hexact_nonempty : exactSet.Nonempty := by
+    apply proj_nonempty 0
+    exact reach_nonempty g hXne
+  have hExact_le : ∀ s ∈ exactSet, s ≤ -T := by
+    intro s hs
+    rcases hs with ⟨y, hy, rfl⟩
+    have hy' : y ∈ reach (upperCounterexample (d := d) a b T) X.feasibleSet := by
+      simpa [exactSet, g, upperCounterexample] using hy
+    rcases hy' with ⟨x, hxX, rfl⟩
+    have hx0 : x 0 ∈ Set.Icc a b := Theorem33Polytope.firstCoord_mem_Icc hproj hxX
+    have hnorm : normalized a b (x 0) ∈ Set.Icc (-1 : Real) 1 :=
+      normalized_mem_Icc hab hx0
+    have hge : T ≤ valleyValue T (prefixPoint (normalized a b (x 0))) :=
+      Theorem33Polytope.valleyValue_prefix_ge T (normalized a b (x 0)) hT hnorm
+    have hneg : -valleyValue T (prefixPoint (normalized a b (x 0))) ≤ -T := by
+      linarith
+    simpa [upperCounterexample, eval_negValleyNet, eval_prefixNet] using hneg
+  have hmax_le : ubproj 0 (reach g X.feasibleSet) ≤ -T := by
+    simpa [ubproj, exactSet] using csSup_le hexact_nonempty hExact_le
+  have hlemma :
+      ubproj 0 (reach (negValleyNet T)
+        (convexHull Real (reach (prefixNet (d := d) a b) X.feasibleSet))) ≤
+      ubPrActual hr g X 0 := by
+    simpa [g] using
+      lemma41_fixedr_upper (prefixNet (d := d) a b) (negValleyNet T) X hr
+        hprefix hnegValley hXne hglue hPr_bdd
+  have hreach_mid : (![(0 : Real)] : Coord 1) ∈
+      reach (negValleyNet T)
+        (convexHull Real (reach (prefixNet (d := d) a b) X.feasibleSet)) := by
+    refine ⟨midPoint, Theorem33Polytope.midPoint_mem_convexHull_reach_prefix hproj hab, ?_⟩
+    ext i
+    fin_cases i
+    simp [eval_negValleyNet, valleyValue_at_midPoint]
+  have hzero_mem : (0 : Real) ∈
+      proj 0 (reach (negValleyNet T)
+        (convexHull Real (reach (prefixNet (d := d) a b) X.feasibleSet))) := by
+    exact ⟨![0], hreach_mid, rfl⟩
+  have hconv_bddAbove : BddAbove
+      (proj 0 (reach (negValleyNet T)
+        (convexHull Real (reach (prefixNet (d := d) a b) X.feasibleSet)))) := by
+    refine ⟨0, ?_⟩
+    intro s hs
+    rcases hs with ⟨y, hy, rfl⟩
+    rcases hy with ⟨z, hz, rfl⟩
+    exact Theorem33Polytope.exact_negValley_nonpos T (le_of_lt hT) z
+  have hzero_le_ub :
+      0 ≤ ubproj 0 (reach (negValleyNet T)
+        (convexHull Real (reach (prefixNet (d := d) a b) X.feasibleSet))) := by
+    simpa [ubproj, proj] using le_csSup hconv_bddAbove hzero_mem
+  have hzero_le_ubPr : 0 ≤ ubPrActual hr g X 0 := le_trans hzero_le_ub hlemma
+  linarith
+
+/-- Fixed-radius version of Theorem 4.2. -/
+theorem theorem42_fixedr
+    {d : Nat} (X : Polytope (Nat.succ d)) {a b T : Real} {r : Nat}
+    (hr : 0 < r) (hr3 : 3 ≤ r)
+    (hproj : (fun x : Coord (Nat.succ d) => x 0) '' X.feasibleSet = Set.Icc a b)
+    (hab : a < b) (hT : 0 < T)
+    (hglueLower :
+      PumpGlueCondition hr (prefixNet (d := d) a b) (valleyNet T) X.feasibleSet)
+    (hPrLower_bdd :
+      Bornology.IsBounded
+        (PrOutputSetOnPolytope hr
+          (pumpNetPr (prefixNet (d := d) a b) (valleyNet T) r) X))
+    (hglueUpper :
+      PumpGlueCondition hr (prefixNet (d := d) a b) (negValleyNet T) X.feasibleSet)
+    (hPrUpper_bdd :
+      Bornology.IsBounded
+        (PrOutputSetOnPolytope hr
+          (pumpNetPr (prefixNet (d := d) a b) (negValleyNet T) r) X)) :
     (∃ f : Net (Nat.succ d) 1,
-        ∃ D : BlockDecomposition (gammaRadius γ (syntacticDepth f)) (Nat.succ d) 1,
-          BlockDecomposition.toNet D = f ∧
-          lbPr D X 0 ≤ sInf (coordImage 0 (reach f X)) - T) ∧
+        lbPrActual hr f X 0 ≤ lbproj 0 (reach f X.feasibleSet) - T) ∧
       (∃ g : Net (Nat.succ d) 1,
-        ∃ D : BlockDecomposition (gammaRadius γ (syntacticDepth g)) (Nat.succ d) 1,
-          BlockDecomposition.toNet D = g ∧
-          sSup (coordImage 0 (reach g X)) + T ≤ ubPr D X 0) := by
-  refine ⟨theorem42_lower hXconv hproj hab hγ hγ' hT,
-    theorem42_upper hXconv hproj hab hγ hγ' hT⟩
+        ubproj 0 (reach g X.feasibleSet) + T ≤ ubPrActual hr g X 0) := by
+  refine ⟨theorem42_lower_fixedr X hr hr3 hproj hab hT hglueLower hPrLower_bdd,
+    theorem42_upper_fixedr X hr hr3 hproj hab hT hglueUpper hPrUpper_bdd⟩
+
+/--
+changing-r-version lower-bound half of Theorem 4.2.
+`r = max (1, floor (α * L))`.
+-/
+theorem theorem42_lower
+    {d : Nat} (X : Polytope (Nat.succ d)) {a b T α : Real}
+    (hα : α < 1)
+    (hproj : (fun x : Coord (Nat.succ d) => x 0) '' X.feasibleSet = Set.Icc a b)
+    (hab : a < b) (hT : 0 < T)
+    (s : Nat)
+    (hlarge :
+      let r := alphaRadius α
+        (layerCount (pumpNetPr (prefixNet (d := d) a b) (valleyNet T) s))
+      r ≤ s)
+    (hglue :
+      let r := alphaRadius α
+        (layerCount (pumpNetPr (prefixNet (d := d) a b) (valleyNet T) s))
+      let hr : 0 < r := alphaRadius_pos α
+        (layerCount (pumpNetPr (prefixNet (d := d) a b) (valleyNet T) s))
+      let f₂' := prependIds (2 * (s - r)) (valleyNet T)
+      let left : LayerChain.T (Nat.succ d) 2 :=
+        LayerChain.appendChain
+          (LayerChain.FlattenNet (prefixNet (d := d) a b))
+          (LayerChain.idChain 2 r)
+      let right : LayerChain.T 2 1 :=
+        LayerChain.appendChain (LayerChain.idChain 2 r) (LayerChain.FlattenNet f₂')
+      let whole : LayerChain.T (Nat.succ d) 1 := LayerChain.appendChain left right
+      ∀ {u : FullTrace left} {v : FullTrace right},
+        u ∈ convHullTrace left X.feasibleSet →
+        v ∈ PrRelaxedSetChain r hr right {traceOutput u} →
+        LayerChain.spliceTrace u v ∈ PrRelaxedSetChain r hr whole X.feasibleSet)
+    (hPr_bdd :
+      Bornology.IsBounded
+        (PrOutputSetOnPolytope
+          (alphaRadius_pos α
+            (layerCount (pumpNetPr (prefixNet (d := d) a b) (valleyNet T) s)))
+          (pumpNetPr (prefixNet (d := d) a b) (valleyNet T) s) X)) :
+    ∃ f : Net (Nat.succ d) 1,
+      lbPrActual (alphaRadius_pos α (layerCount f)) f X 0 ≤
+        lbproj 0 (reach f X.feasibleSet) - T := by
+  let f : Net (Nat.succ d) 1 :=
+    pumpNetPr (prefixNet (d := d) a b) (valleyNet T) s
+  refine ⟨f, ?_⟩
+  let hr : 0 < alphaRadius α (layerCount f) := alphaRadius_pos α (layerCount f)
+  let exactSet := proj 0 (reach f X.feasibleSet)
+  have hXne : X.feasibleSet.Nonempty := by
+    rcases Theorem33Polytope.exists_mem_of_firstCoord hproj
+      (by exact ⟨le_rfl, le_of_lt hab⟩) with ⟨x, hx, _⟩
+    exact ⟨x, hx⟩
+  have hexact_nonempty : exactSet.Nonempty := by
+    apply proj_nonempty 0
+    exact reach_nonempty f hXne
+  have hExact_ge : ∀ u ∈ exactSet, T ≤ u := by
+    intro u hu
+    rcases hu with ⟨y, hy, rfl⟩
+    have hy' : y ∈ reach (lowerCounterexample (d := d) a b T) X.feasibleSet := by
+      simpa [exactSet, f, lowerCounterexample] using hy
+    rcases hy' with ⟨x, hxX, rfl⟩
+    have hx0 : x 0 ∈ Set.Icc a b := Theorem33Polytope.firstCoord_mem_Icc hproj hxX
+    have hnorm : normalized a b (x 0) ∈ Set.Icc (-1 : Real) 1 :=
+      normalized_mem_Icc hab hx0
+    simpa [lowerCounterexample, eval_valleyNet, eval_prefixNet] using
+      Theorem33Polytope.valleyValue_prefix_ge T (normalized a b (x 0)) hT hnorm
+  have hmin_ge : T ≤ lbproj 0 (reach f X.feasibleSet) := by
+    simpa [lbproj, exactSet] using le_csInf hexact_nonempty hExact_ge
+  have hlemma :
+      lbPrActual hr f X 0 ≤
+        lbproj 0 (reach (valleyNet T)
+          (convexHull Real (reach (prefixNet (d := d) a b) X.feasibleSet))) := by
+    have hPr_bdd' :
+        Bornology.IsBounded
+          (PrOutputSet
+            (alphaRadius_pos α (layerCount f))
+            f X.feasibleSet) := by
+      simpa [f, PrOutputSetOnPolytope] using hPr_bdd
+    have hrad :
+        lbproj 0 (reach (valleyNet T)
+          (convexHull Real (reach (prefixNet (d := d) a b) X.feasibleSet))) ≥
+          lbproj 0
+            (PrOutputSet
+              (alphaRadius_pos α (layerCount f))
+              f X.feasibleSet) := by
+      simpa [f] using
+        lemma41_lower α hα (prefixNet (d := d) a b) (valleyNet T) s X.feasibleSet
+          hXne hlarge hglue hPr_bdd'
+    simpa [lbPrActual, PrOutputSetOnPolytope, hr, ge_iff_le] using hrad
+  have hreach_mid : (![(0 : Real)] : Coord 1) ∈
+      reach (valleyNet T)
+        (convexHull Real (reach (prefixNet (d := d) a b) X.feasibleSet)) := by
+    refine ⟨midPoint, Theorem33Polytope.midPoint_mem_convexHull_reach_prefix hproj hab, ?_⟩
+    ext i
+    fin_cases i
+    simp [eval_valleyNet, valleyValue_at_midPoint]
+  have hzero_mem : (0 : Real) ∈
+      proj 0 (reach (valleyNet T)
+        (convexHull Real (reach (prefixNet (d := d) a b) X.feasibleSet))) := by
+    exact ⟨![0], hreach_mid, rfl⟩
+  have hconv_bddBelow : BddBelow
+      (proj 0 (reach (valleyNet T)
+        (convexHull Real (reach (prefixNet (d := d) a b) X.feasibleSet)))) := by
+    refine ⟨0, ?_⟩
+    intro u hu
+    rcases hu with ⟨y, hy, rfl⟩
+    rcases hy with ⟨z, hz, rfl⟩
+    exact Theorem33Polytope.exact_valley_nonneg T (le_of_lt hT) z
+  have hlb_le_zero :
+      lbproj 0 (reach (valleyNet T)
+        (convexHull Real (reach (prefixNet (d := d) a b) X.feasibleSet))) ≤ 0 := by
+    simpa [lbproj, proj] using csInf_le hconv_bddBelow hzero_mem
+  have hlbPr_le_zero : lbPrActual hr f X 0 ≤ 0 := le_trans hlemma hlb_le_zero
+  simpa [f, hr] using (show lbPrActual hr f X 0 ≤ lbproj 0 (reach f X.feasibleSet) - T by
+    linarith)
+
+/--
+changing-r-version upper-bound half of Theorem 4.2.
+-/
+theorem theorem42_upper
+    {d : Nat} (X : Polytope (Nat.succ d)) {a b T α : Real}
+    (hα : α < 1)
+    (hproj : (fun x : Coord (Nat.succ d) => x 0) '' X.feasibleSet = Set.Icc a b)
+    (hab : a < b) (hT : 0 < T)
+    (s : Nat)
+    (hlarge :
+      let r := alphaRadius α
+        (layerCount (pumpNetPr (prefixNet (d := d) a b) (negValleyNet T) s))
+      r ≤ s)
+    (hglue :
+      let r := alphaRadius α
+        (layerCount (pumpNetPr (prefixNet (d := d) a b) (negValleyNet T) s))
+      let hr : 0 < r := alphaRadius_pos α
+        (layerCount (pumpNetPr (prefixNet (d := d) a b) (negValleyNet T) s))
+      let f₂' := prependIds (2 * (s - r)) (negValleyNet T)
+      let left : LayerChain.T (Nat.succ d) 2 :=
+        LayerChain.appendChain
+          (LayerChain.FlattenNet (prefixNet (d := d) a b))
+          (LayerChain.idChain 2 r)
+      let right : LayerChain.T 2 1 :=
+        LayerChain.appendChain (LayerChain.idChain 2 r) (LayerChain.FlattenNet f₂')
+      let whole : LayerChain.T (Nat.succ d) 1 := LayerChain.appendChain left right
+      ∀ {u : FullTrace left} {v : FullTrace right},
+        u ∈ convHullTrace left X.feasibleSet →
+        v ∈ PrRelaxedSetChain r hr right {traceOutput u} →
+        LayerChain.spliceTrace u v ∈ PrRelaxedSetChain r hr whole X.feasibleSet)
+    (hPr_bdd :
+      Bornology.IsBounded
+        (PrOutputSetOnPolytope
+          (alphaRadius_pos α
+            (layerCount (pumpNetPr (prefixNet (d := d) a b) (negValleyNet T) s)))
+          (pumpNetPr (prefixNet (d := d) a b) (negValleyNet T) s) X)) :
+    ∃ g : Net (Nat.succ d) 1,
+      ubproj 0 (reach g X.feasibleSet) + T ≤
+        ubPrActual (alphaRadius_pos α (layerCount g)) g X 0 := by
+  let g : Net (Nat.succ d) 1 :=
+    pumpNetPr (prefixNet (d := d) a b) (negValleyNet T) s
+  refine ⟨g, ?_⟩
+  let hr : 0 < alphaRadius α (layerCount g) := alphaRadius_pos α (layerCount g)
+  let exactSet := proj 0 (reach g X.feasibleSet)
+  have hXne : X.feasibleSet.Nonempty := by
+    rcases Theorem33Polytope.exists_mem_of_firstCoord hproj
+      (by exact ⟨le_rfl, le_of_lt hab⟩) with ⟨x, hx, _⟩
+    exact ⟨x, hx⟩
+  have hexact_nonempty : exactSet.Nonempty := by
+    apply proj_nonempty 0
+    exact reach_nonempty g hXne
+  have hExact_le : ∀ u ∈ exactSet, u ≤ -T := by
+    intro u hu
+    rcases hu with ⟨y, hy, rfl⟩
+    have hy' : y ∈ reach (upperCounterexample (d := d) a b T) X.feasibleSet := by
+      simpa [exactSet, g, upperCounterexample] using hy
+    rcases hy' with ⟨x, hxX, rfl⟩
+    have hx0 : x 0 ∈ Set.Icc a b := Theorem33Polytope.firstCoord_mem_Icc hproj hxX
+    have hnorm : normalized a b (x 0) ∈ Set.Icc (-1 : Real) 1 :=
+      normalized_mem_Icc hab hx0
+    have hge : T ≤ valleyValue T (prefixPoint (normalized a b (x 0))) :=
+      Theorem33Polytope.valleyValue_prefix_ge T (normalized a b (x 0)) hT hnorm
+    have hneg : -valleyValue T (prefixPoint (normalized a b (x 0))) ≤ -T := by
+      linarith
+    simpa [upperCounterexample, eval_negValleyNet, eval_prefixNet] using hneg
+  have hmax_le : ubproj 0 (reach g X.feasibleSet) ≤ -T := by
+    simpa [ubproj, exactSet] using csSup_le hexact_nonempty hExact_le
+  have hlemma :
+      ubproj 0 (reach (negValleyNet T)
+        (convexHull Real (reach (prefixNet (d := d) a b) X.feasibleSet))) ≤
+        ubPrActual hr g X 0 := by
+    have hPr_bdd' :
+        Bornology.IsBounded
+          (PrOutputSet
+            (alphaRadius_pos α (layerCount g))
+            g X.feasibleSet) := by
+      simpa [g, PrOutputSetOnPolytope] using hPr_bdd
+    have hrad :
+        ubproj 0 (reach (negValleyNet T)
+          (convexHull Real (reach (prefixNet (d := d) a b) X.feasibleSet))) ≤
+          ubproj 0
+            (PrOutputSet
+              (alphaRadius_pos α (layerCount g))
+              g X.feasibleSet) := by
+      simpa [g] using
+        lemma41_upper α hα (prefixNet (d := d) a b) (negValleyNet T) s X.feasibleSet
+          hXne hlarge hglue hPr_bdd'
+    simpa [ubPrActual, PrOutputSetOnPolytope, hr] using hrad
+  have hreach_mid : (![(0 : Real)] : Coord 1) ∈
+      reach (negValleyNet T)
+        (convexHull Real (reach (prefixNet (d := d) a b) X.feasibleSet)) := by
+    refine ⟨midPoint, Theorem33Polytope.midPoint_mem_convexHull_reach_prefix hproj hab, ?_⟩
+    ext i
+    fin_cases i
+    simp [eval_negValleyNet, valleyValue_at_midPoint]
+  have hzero_mem : (0 : Real) ∈
+      proj 0 (reach (negValleyNet T)
+        (convexHull Real (reach (prefixNet (d := d) a b) X.feasibleSet))) := by
+    exact ⟨![0], hreach_mid, rfl⟩
+  have hconv_bddAbove : BddAbove
+      (proj 0 (reach (negValleyNet T)
+        (convexHull Real (reach (prefixNet (d := d) a b) X.feasibleSet)))) := by
+    refine ⟨0, ?_⟩
+    intro u hu
+    rcases hu with ⟨y, hy, rfl⟩
+    rcases hy with ⟨z, hz, rfl⟩
+    exact Theorem33Polytope.exact_negValley_nonpos T (le_of_lt hT) z
+  have hzero_le_ub :
+      0 ≤ ubproj 0 (reach (negValleyNet T)
+        (convexHull Real (reach (prefixNet (d := d) a b) X.feasibleSet))) := by
+    simpa [ubproj, proj] using le_csSup hconv_bddAbove hzero_mem
+  have hzero_le_ubPr : 0 ≤ ubPrActual hr g X 0 := le_trans hzero_le_ub hlemma
+  simpa [g, hr] using (show ubproj 0 (reach g X.feasibleSet) + T ≤ ubPrActual hr g X 0 by
+    linarith)
+
+/-- Changing-radius version of Theorem 4.2. -/
+theorem theorem42
+    {d : Nat} (X : Polytope (Nat.succ d)) {a b T α : Real}
+    (hα : α < 1)
+    (hproj : (fun x : Coord (Nat.succ d) => x 0) '' X.feasibleSet = Set.Icc a b)
+    (hab : a < b) (hT : 0 < T)
+    (s : Nat)
+    (hlargeLower :
+      let r := alphaRadius α
+        (layerCount (pumpNetPr (prefixNet (d := d) a b) (valleyNet T) s))
+      r ≤ s)
+    (hglueLower :
+      let r := alphaRadius α
+        (layerCount (pumpNetPr (prefixNet (d := d) a b) (valleyNet T) s))
+      let hr : 0 < r := alphaRadius_pos α
+        (layerCount (pumpNetPr (prefixNet (d := d) a b) (valleyNet T) s))
+      let f₂' := prependIds (2 * (s - r)) (valleyNet T)
+      let left : LayerChain.T (Nat.succ d) 2 :=
+        LayerChain.appendChain
+          (LayerChain.FlattenNet (prefixNet (d := d) a b))
+          (LayerChain.idChain 2 r)
+      let right : LayerChain.T 2 1 :=
+        LayerChain.appendChain (LayerChain.idChain 2 r) (LayerChain.FlattenNet f₂')
+      let whole : LayerChain.T (Nat.succ d) 1 := LayerChain.appendChain left right
+      ∀ {u : FullTrace left} {v : FullTrace right},
+        u ∈ convHullTrace left X.feasibleSet →
+        v ∈ PrRelaxedSetChain r hr right {traceOutput u} →
+        LayerChain.spliceTrace u v ∈ PrRelaxedSetChain r hr whole X.feasibleSet)
+    (hPrLower_bdd :
+      Bornology.IsBounded
+        (PrOutputSetOnPolytope
+          (alphaRadius_pos α
+            (layerCount (pumpNetPr (prefixNet (d := d) a b) (valleyNet T) s)))
+          (pumpNetPr (prefixNet (d := d) a b) (valleyNet T) s) X))
+    (hlargeUpper :
+      let r := alphaRadius α
+        (layerCount (pumpNetPr (prefixNet (d := d) a b) (negValleyNet T) s))
+      r ≤ s)
+    (hglueUpper :
+      let r := alphaRadius α
+        (layerCount (pumpNetPr (prefixNet (d := d) a b) (negValleyNet T) s))
+      let hr : 0 < r := alphaRadius_pos α
+        (layerCount (pumpNetPr (prefixNet (d := d) a b) (negValleyNet T) s))
+      let f₂' := prependIds (2 * (s - r)) (negValleyNet T)
+      let left : LayerChain.T (Nat.succ d) 2 :=
+        LayerChain.appendChain
+          (LayerChain.FlattenNet (prefixNet (d := d) a b))
+          (LayerChain.idChain 2 r)
+      let right : LayerChain.T 2 1 :=
+        LayerChain.appendChain (LayerChain.idChain 2 r) (LayerChain.FlattenNet f₂')
+      let whole : LayerChain.T (Nat.succ d) 1 := LayerChain.appendChain left right
+      ∀ {u : FullTrace left} {v : FullTrace right},
+        u ∈ convHullTrace left X.feasibleSet →
+        v ∈ PrRelaxedSetChain r hr right {traceOutput u} →
+        LayerChain.spliceTrace u v ∈ PrRelaxedSetChain r hr whole X.feasibleSet)
+    (hPrUpper_bdd :
+      Bornology.IsBounded
+        (PrOutputSetOnPolytope
+          (alphaRadius_pos α
+            (layerCount (pumpNetPr (prefixNet (d := d) a b) (negValleyNet T) s)))
+          (pumpNetPr (prefixNet (d := d) a b) (negValleyNet T) s) X)) :
+    (∃ f : Net (Nat.succ d) 1,
+        lbPrActual (alphaRadius_pos α (layerCount f)) f X 0 ≤
+          lbproj 0 (reach f X.feasibleSet) - T) ∧
+      (∃ g : Net (Nat.succ d) 1,
+        ubproj 0 (reach g X.feasibleSet) + T ≤
+          ubPrActual (alphaRadius_pos α (layerCount g)) g X 0) := by
+  refine ⟨theorem42_lower X hα hproj hab hT s hlargeLower hglueLower hPrLower_bdd,
+    theorem42_upper X hα hproj hab hT s hlargeUpper hglueUpper hPrUpper_bdd⟩
+
 
 end
 
-end Theorem42
+end Theorem42Polytope
 
 end Net
-
-end MultiNeuron

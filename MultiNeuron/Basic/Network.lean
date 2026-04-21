@@ -85,6 +85,13 @@ def eval {n m : Nat} : Net n m → Coord n → Coord m
   | .comp N₁ N₂ => eval N₂ ∘ eval N₁
 
 
+theorem continuous_eval : {n m : Nat} → (f : Net n m) → Continuous (eval f)
+  | _, _, .idLayer _ => by
+      simpa [Net.eval] using (continuous_id : Continuous (fun x : Coord _ => x))
+  | _, _, .affineLayer A b => by simpa [Net.eval] using continuous_affinemap A b
+  | _, _, .reluLayer _ => by simpa [Net.eval] using (continuous_relu : Continuous (relu : Coord _ → Coord _))
+  | _, _, .comp f g => by
+      simpa [Net.eval] using (continuous_eval g).comp (continuous_eval f)
 
 
 /--

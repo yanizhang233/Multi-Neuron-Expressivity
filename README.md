@@ -107,15 +107,11 @@ The following table contains the one-to-one correspondence between the lemmata a
 ### 2.2 Crosslayer.lean
 | Lean | Definition or proof statement |
 | --- | --- |
-|`layerCount`|Define the function counting the number of layers in a network.|
-|`blockRelax`|Define the relaxation of a block of layers by way of taking its convex hull.|
-|`T`|Define the trace containing of all intermediate variables.|
-|`instAddCommMonoidFullTrace`|Prove that `T` is `AddCommMonoid'. |
-|`instModuleFullTrace`|Prove that `T` is `Module'. |
-|`PrRelaxedSet`|Define the relaxed set induced by $\mathcal{P}_r$.|
-|`PrOutputSet`|Define the feasible output set induced by $\mathcal{P}_r$|
-|`reach_subset_PrOutputSet`|Prove that $\mathcal{P}_r$ is sound: the feasible output set induced by $\mathcal{P}_r$ always contains the exact reachable set. |
-
+|`PrRelaxedSetChain`|Define the relaxed set induced by $\mathcal{P}_r$.|
+|`PrOutputSetChain`|Define the feasible output set induced by $\mathcal{P}_r$|
+|`exactTrace_mem_PrRelaxedSetChain_of_mem`|Prove that $\mathcal{P}_r$ is sound: the feasible output set induced by $\mathcal{P}_r$ always contains the exact reachable set. |
+|`reach_conv_middle_subset_PrOutputSet_pump_of_glue`|Prove that for a net $f = f_2 \circ f_1$, through inserting identity layers in between $f_2$ and $f_1$, we get that $ f_2 (\texttt{conv} ( f_1(X) ))$ is a subset of the output set produced by $\mathcal{P}_r$|.
+|     `reach_conv_middle_subset_PrOutputSet_pump_of_glue_radius`  |Prove the same statement as the previous theorem, but for the depth-dependent-$r$  in the paper.|
 
 ## 3. Results
 ### 3.1 Lemma3-1.lean
@@ -151,16 +147,13 @@ The following table contains the one-to-one correspondence between the lemmata a
 ### 3.5 Lemma4-1.lean
 | Lean | Definition or proof statement |
 | --- | --- |
-|`gammaRadius`|Define the $\max(1, \alpha L)$ in the paper.|
 |`lbPr`|Define the lower bound on some output coordinate returned by $\mathcal{P_r}$. |
 |`ubPr`|Define the upper bound on some output coordinate returned by $\mathcal{P_r}$.|
 |`pumpNet`|Define the operation of pumping dummy layers in the paper. |
-|`PrOutputSetOnPolytope_pumpDecomposition_eq`|Prove that after pumping dummy layers, $\mathcal{P_r}$ computes exactly on the convex hull of the image of the prefix net.|
 |`lemma41`|Prove Lemma 4.1.|
-|||
 
 ### 3.6 Theorem4-2.lean
 | Lean | Definition or proof statement |
 | --- | --- |
-|||
-|||
+|`theorem42_fixedr`|Prove Theorem 4.2 for fixed $r$.|
+|`theorem42`|Prove Theorem 4.2.|

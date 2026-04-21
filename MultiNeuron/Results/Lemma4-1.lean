@@ -1,4 +1,6 @@
-import MultiNeuron.Relaxation.CrosslayerPolytope
+import MultiNeuron.Relaxation.Crosslayer
+import Mathlib.Analysis.Normed.Module.Convex
+import Mathlib.Analysis.Normed.Module.FiniteDimension
 
 open Set
 
@@ -7,8 +9,7 @@ namespace Net
 noncomputable section
 
 /-!
-This file formalizes a polytope version of Lemma 4.1 using the cross-layer
-polytope backend.
+This file formalizes the fixed-radius sliding-window version of Lemma 4.1.
 -/
 
 /-- Project a set of vectors to the `o`-th coordinate. -/
@@ -33,271 +34,298 @@ theorem convexHull_nonempty {m : Nat} {S : Set (Coord m)} (hS : S.Nonempty) :
   rcases hS with ⟨x, hx⟩
   exact ⟨x, subset_convexHull Real S hx⟩
 
-/-- `repeatId n k` is a chain of `k + 1` dummy identity layers on `Coord n`. -/
-def repeatId (n : Nat) : Nat → Net n n
-  | 0 => Net.idLayer n
-  | k + 1 => Net.comp (Net.idLayer n) (repeatId n k)
+private theorem isBounded_image_of_continuous {n m : Nat} {S : Set (Coord n)}
+    {f : Coord n → Coord m} (hf : Continuous f) (hS : Bornology.IsBounded S) :
+    Bornology.IsBounded (f '' S) := by
+  letI : ProperSpace (Coord n) := FiniteDimensional.proper ℝ (Coord n)
+  exact ((hS.isCompact_closure.image hf).isBounded).subset (image_mono subset_closure)
 
-@[simp] theorem layerCount_repeatId (n : Nat) : ∀ k, layerCount (repeatId n k) = k + 1
-  | 0 => by simp [repeatId]
-  | k + 1 => by
-      simp [repeatId, layerCount_repeatId n k, Nat.add_left_comm, Nat.add_comm]
+theorem WholeNetConvexRelax_bounded {n m : Nat} (f : Net n m) {X : Set (Coord n)}
+    (hX : Bornology.IsBounded X) :
+    Bornology.IsBounded (WholeNetConvexRelax f X) := by
+  rw [WholeNetConvexRelax_eq_convexHull_reach]
+  have hImg : Bornology.IsBounded (reach f X) := by
+    simpa [Net.reach] using isBounded_image_of_continuous (continuous_eval f) hX
+  exact (isBounded_convexHull : Bornology.IsBounded (convexHull ℝ (reach f X)) ↔ _).2 hImg
 
-@[simp] theorem eval_repeatId (n : Nat) : ∀ k, eval (repeatId n k) = _root_.id
-  | 0 => rfl
-  | k + 1 => by
-      funext x
-      simp [repeatId, eval_repeatId n k, Net.eval]
+/-- Lower bound returned by the actual sliding-window `P_r` relaxation. -/
+noncomputable def lbPrActual {r n m : Nat}
+    (hr : 0 < r) (f : Net n m) (X : Polytope n) (o : Fin m) : Real :=
+  lbproj o (PrOutputSetOnPolytope hr f X)
 
-@[simp] theorem reach_repeatId (n : Nat) (k : Nat) (X : Set (Coord n)) :
-    reach (repeatId n k) X = X := by
-  simp [Net.reach, eval_repeatId]
-
-/-- The depth-dependent radius `max(1, ⌈γ L⌉)`. -/
-noncomputable def gammaRadius (γ : Real) (L : Nat) : Nat :=
-  max 1 (Nat.ceil (γ * L))
-
-/-- Lower bound returned by a cross-layer relaxation on a polytope input. -/
-noncomputable def lbPr {r n m : Nat}
-    (D : BlockDecomposition r n m) (X : Polytope n) (o : Fin m) : Real :=
-  lbproj o (PrOutputSetOfDecomposition D X.feasibleSet)
-
-/-- Upper bound returned by a cross-layer relaxation on a polytope input. -/
-noncomputable def ubPr {r n m : Nat}
-    (D : BlockDecomposition r n m) (X : Polytope n) (o : Fin m) : Real :=
-  ubproj o (PrOutputSetOfDecomposition D X.feasibleSet)
-
-/-- Append two block decompositions. -/
-def appendDecomposition {r n m k : Nat} :
-    BlockDecomposition r n m → BlockDecomposition r m k → BlockDecomposition r n k
-  | .single f hcount, tail => .comp f hcount tail
-  | .comp f hcount rest, tail => .comp f hcount (appendDecomposition rest tail)
-
-/-- Prepend `gap + 1` identity layers in front of a network. -/
-def prependIds {n m : Nat} (f : Net n m) : Nat → Net n m
-  | 0 => Net.comp (Net.idLayer n) f
-  | k + 1 => Net.comp (Net.idLayer n) (prependIds f k)
-
-@[simp] theorem layerCount_prependIds {n m : Nat} (f : Net n m) :
-    ∀ gap, layerCount (prependIds f gap) = gap + 1 + layerCount f
-  | 0 => by simp [prependIds]
-  | gap + 1 => by
-      simp [prependIds, layerCount_prependIds f gap, Nat.add_left_comm, Nat.add_comm]
-
-@[simp] theorem eval_prependIds {n m : Nat} (f : Net n m) :
-    ∀ gap, eval (prependIds f gap) = eval f
-  | 0 => by
-      funext x
-      simp [prependIds, Net.eval]
-  | gap + 1 => by
-      funext x
-      simp [prependIds, eval_prependIds f gap, Net.eval]
-
-/-- Decompose `repeatId n k` into single-identity blocks. -/
-def repeatIdDecomposition (n r : Nat) (hr : 1 ≤ r) : Nat → BlockDecomposition r n n
-  | 0 => .single (Net.idLayer n) (by simpa [layerCount] using hr)
-  | k + 1 => .comp (Net.idLayer n) (by simpa [layerCount] using hr) (repeatIdDecomposition n r hr k)
-
-@[simp] theorem repeatIdDecomposition_toNet (n r : Nat) (hr : 1 ≤ r) :
-    ∀ k, BlockDecomposition.toNet (repeatIdDecomposition n r hr k) = repeatId n k
-  | 0 => by
-      simp [repeatIdDecomposition, repeatId, BlockDecomposition.toNet]
-  | k + 1 => by
-      simp [repeatIdDecomposition, repeatId, BlockDecomposition.toNet,
-        repeatIdDecomposition_toNet n r hr k]
-
-@[simp] theorem blockRelax_idLayer (n : Nat) (X : Set (Coord n)) :
-    blockRelax (Net.idLayer n) X = convexHull Real X := by
-  rw [blockRelax_eq_convexHull_reach, Net.reach]
-  simp
-
-@[simp] theorem PrOutputSetOfDecomposition_appendDecomposition {r n m k : Nat}
-    (D₁ : BlockDecomposition r n m) (D₂ : BlockDecomposition r m k) (X : Set (Coord n)) :
-    PrOutputSetOfDecomposition (appendDecomposition D₁ D₂) X =
-      PrOutputSetOfDecomposition D₂ (PrOutputSetOfDecomposition D₁ X) := by
-  induction D₁ with
-  | single f hcount =>
-      rw [appendDecomposition, PrOutputSetOfDecomposition_comp, PrOutputSetOfDecomposition_single]
-  | comp f hcount rest ih =>
-      rw [appendDecomposition, PrOutputSetOfDecomposition_comp, ih, PrOutputSetOfDecomposition_comp]
-
-@[simp] theorem PrOutputSetOfDecomposition_repeatIdDecomposition (n r : Nat) (hr : 1 ≤ r) :
-    ∀ gap (X : Set (Coord n)),
-      PrOutputSetOfDecomposition (repeatIdDecomposition n r hr gap) X = convexHull Real X
-  | 0, X => by
-      rw [repeatIdDecomposition, PrOutputSetOfDecomposition_single, blockRelax_idLayer]
-  | gap + 1, X => by
-      rw [repeatIdDecomposition, PrOutputSetOfDecomposition_comp,
-        PrOutputSetOfDecomposition_repeatIdDecomposition n r hr gap]
-      rw [blockRelax_idLayer]
-      exact (convex_convexHull Real X).convexHull_eq
-
-/-- Pump a composition by inserting a chain of dummy identity layers in the middle. -/
-def pumpNet {d d' : Nat} (f₁ : Net d d') (f₂ : Net d' 1) (gap : Nat) : Net d 1 :=
-  Net.comp f₁ (prependIds f₂ gap)
+/-- Upper bound returned by the actual sliding-window `P_r` relaxation. -/
+noncomputable def ubPrActual {r n m : Nat}
+    (hr : 0 < r) (f : Net n m) (X : Polytope n) (o : Fin m) : Real :=
+  ubproj o (PrOutputSetOnPolytope hr f X)
 
 /--
-The explicit block decomposition used in the pumped version of Lemma 4.1:
-one block for `f₁`, then the dummy identities split into single-identity
-blocks, and finally one block for `f₂`.
+The remaining trace-gluing hypothesis needed to bridge the pumped
+sliding-window relaxation.
 -/
-def pumpDecomposition {r d d' : Nat}
-    (f₁ : Net d d') (h₁ : layerCount f₁ ≤ r)
-    (f₂ : Net d' 1) (h₂ : layerCount f₂ ≤ r) (gap : Nat) :
-    BlockDecomposition r d 1 :=
-  let hr : 1 ≤ r := le_trans (one_le_layerCount f₂) h₂
-  .comp f₁ h₁ (appendDecomposition (repeatIdDecomposition d' r hr gap) (.single f₂ h₂))
-
-@[simp] theorem append_repeatIdDecomposition_single_toNet
-    {r n m : Nat} (hr : 1 ≤ r) (f : Net n m) (hcount : layerCount f ≤ r) :
-    ∀ gap,
-      BlockDecomposition.toNet
-          (appendDecomposition (repeatIdDecomposition n r hr gap) (.single f hcount)) =
-        prependIds f gap
-  | 0 => by
-      simp [appendDecomposition, repeatIdDecomposition, prependIds, BlockDecomposition.toNet]
-  | gap + 1 => by
-      simp [appendDecomposition, repeatIdDecomposition, prependIds, BlockDecomposition.toNet,
-        append_repeatIdDecomposition_single_toNet hr f hcount gap]
-
-@[simp] theorem pumpDecomposition_toNet {r d d' : Nat}
-    (f₁ : Net d d') (h₁ : layerCount f₁ ≤ r)
-    (f₂ : Net d' 1) (h₂ : layerCount f₂ ≤ r) (gap : Nat) :
-    BlockDecomposition.toNet (pumpDecomposition f₁ h₁ f₂ h₂ gap) = pumpNet f₁ f₂ gap := by
-  let hr : 1 ≤ r := le_trans (one_le_layerCount f₂) h₂
-  simp [pumpDecomposition, pumpNet, BlockDecomposition.toNet,
-    append_repeatIdDecomposition_single_toNet]
-
-@[simp] theorem eval_pumpNet {d d' : Nat} (f₁ : Net d d') (f₂ : Net d' 1) (gap : Nat) :
-    eval (pumpNet f₁ f₂ gap) = eval (Net.comp f₁ f₂) := by
-  funext x
-  simp [pumpNet, eval_prependIds, Net.eval]
-
-@[simp] theorem reach_pumpNet {d d' : Nat}
-    (f₁ : Net d d') (f₂ : Net d' 1) (gap : Nat) (X : Set (Coord d)) :
-    reach (pumpNet f₁ f₂ gap) X = reach (Net.comp f₁ f₂) X := by
-  simp [Net.reach, eval_pumpNet]
-
-@[simp] theorem blockRelax_repeatId {n : Nat} (gap : Nat) (X : Set (Coord n)) :
-    blockRelax (repeatId n gap) X = convexHull Real X := by
-  simp [blockRelax_eq_convexHull_reach, reach_repeatId]
-
-theorem blockRelax_repeatId_of_convex {n : Nat} (gap : Nat) {X : Set (Coord n)}
-    (hX : Convex Real X) :
-    blockRelax (repeatId n gap) X = X := by
-  rw [blockRelax_repeatId]
-  simpa using hX.convexHull_eq
-
-@[simp] theorem PrOutputSet_pumpDecomposition {r d d' : Nat}
-    (f₁ : Net d d') (h₁ : layerCount f₁ ≤ r)
-    (f₂ : Net d' 1) (h₂ : layerCount f₂ ≤ r)
-    (gap : Nat) (X : Set (Coord d)) :
-    PrOutputSetOfDecomposition (pumpDecomposition f₁ h₁ f₂ h₂ gap) X =
-      blockRelax f₂ (blockRelax f₁ X) := by
-  have hr : 1 ≤ r := le_trans (one_le_layerCount f₂) h₂
-  rw [pumpDecomposition, PrOutputSetOfDecomposition_comp,
-    PrOutputSetOfDecomposition_appendDecomposition,
-    PrOutputSetOfDecomposition_repeatIdDecomposition]
-  rw [PrOutputSetOfDecomposition_single]
-  have hconv : Convex Real (blockRelax f₁ X) := blockRelax_convex f₁ X
-  rw [hconv.convexHull_eq]
+def PumpGlueCondition {d d' k : Nat} {r : Nat}
+    (hr : 0 < r) (f₁ : Net d d') (f₂ : Net d' k) (X : Set (Coord d)) : Prop :=
+  let left : LayerChain.T d d' :=
+    LayerChain.appendChain (LayerChain.FlattenNet f₁) (LayerChain.idChain d' r)
+  let right : LayerChain.T d' k :=
+    LayerChain.appendChain (LayerChain.idChain d' r) (LayerChain.FlattenNet f₂)
+  let whole : LayerChain.T d k := LayerChain.appendChain left right
+  ∀ {u : FullTrace left} {v : FullTrace right},
+    u ∈ convHullTrace left X →
+    v ∈ PrRelaxedSetChain r hr right {traceOutput u} →
+    LayerChain.spliceTrace u v ∈ PrRelaxedSetChain r hr whole X
 
 /--
-The pumped decomposition computes exactly the convex hull of the suffix image on
-the convexified prefix reach set.
+The pumped sliding-window relaxation contains the middle-convexified reach set,
+assuming the explicit trace-gluing condition.
 -/
-theorem PrOutputSet_pumpDecomposition_eq {r d d' : Nat}
-    (f₁ : Net d d') (h₁ : layerCount f₁ ≤ r)
-    (f₂ : Net d' 1) (h₂ : layerCount f₂ ≤ r)
-    (gap : Nat) (X : Set (Coord d)) :
-    PrOutputSetOfDecomposition (pumpDecomposition f₁ h₁ f₂ h₂ gap) X =
-      convexHull Real (reach f₂ (convexHull Real (reach f₁ X))) := by
-  rw [PrOutputSet_pumpDecomposition]
-  rw [blockRelax_eq_convexHull_reach, blockRelax_eq_convexHull_reach]
-
-@[simp] theorem PrOutputSetOnPolytope_pumpDecomposition_eq {r d d' : Nat}
-    (f₁ : Net d d') (h₁ : layerCount f₁ ≤ r)
-    (f₂ : Net d' 1) (h₂ : layerCount f₂ ≤ r)
-    (gap : Nat) (X : Polytope d) :
-    PrOutputSetOfDecomposition (pumpDecomposition f₁ h₁ f₂ h₂ gap) X.feasibleSet =
-      convexHull Real (reach f₂ (convexHull Real (reach f₁ X.feasibleSet))) := by
-  exact PrOutputSet_pumpDecomposition_eq f₁ h₁ f₂ h₂ gap X.feasibleSet
+theorem reach_conv_middle_subset_PrOutputSet_pump
+    {d d' k : Nat} {r : Nat} (hr : 0 < r)
+    (f₁ : Net d d') (f₂ : Net d' k) (X : Set (Coord d))
+    (hglue : PumpGlueCondition hr f₁ f₂ X) :
+    reach f₂ (convexHull Real (reach f₁ X)) ⊆
+      PrOutputSet hr (pumpNetPr f₁ f₂ r) X := by
+  simpa [PumpGlueCondition] using
+    (reach_conv_middle_subset_PrOutputSet_pump_of_glue hr f₁ f₂ X hglue)
 
 /--
-Lower-bound half of the pumped cross-layer version of Lemma 4.1.
+lower-bound half of Lemma 4.1.
 -/
-theorem lemma41Polytope_lower
-    {d d' : Nat} (f₁ : Net d d') (f₂ : Net d' 1)
-    (X : Polytope d) {r : Nat}
-    (h₁ : layerCount f₁ ≤ r) (h₂ : layerCount f₂ ≤ r)
-    (gap : Nat) (hXne : X.feasibleSet.Nonempty) :
-    lbPr (pumpDecomposition f₁ h₁ f₂ h₂ gap) X 0 ≤
-      lbproj 0 (reach f₂ (convexHull Real (reach f₁ X.feasibleSet))) := by
-  let D : BlockDecomposition r d 1 := pumpDecomposition f₁ h₁ f₂ h₂ gap
-  let S := proj 0 (reach f₂ (convexHull Real (reach f₁ X.feasibleSet)))
-  let T := proj 0 (PrOutputSetOfDecomposition D X.feasibleSet)
+theorem lemma41_lower
+    {d d' : Nat} (α : Real) (hα : α < 1)
+    (f₁ : Net d d') (f₂ : Net d' 1) (s : Nat) (X : Set (Coord d))
+    (hXne : X.Nonempty)
+    (hlarge :
+      let r := alphaRadius α (layerCount (pumpNetPr f₁ f₂ s))
+      r ≤ s)
+    (hglue :
+      let r := alphaRadius α (layerCount (pumpNetPr f₁ f₂ s))
+      let hr : 0 < r := alphaRadius_pos α (layerCount (pumpNetPr f₁ f₂ s))
+      let f₂' := prependIds (2 * (s - r)) f₂
+      let left : LayerChain.T d d' :=
+        LayerChain.appendChain (LayerChain.FlattenNet f₁) (LayerChain.idChain d' r)
+      let right : LayerChain.T d' 1 :=
+        LayerChain.appendChain (LayerChain.idChain d' r) (LayerChain.FlattenNet f₂')
+      let whole : LayerChain.T d 1 := LayerChain.appendChain left right
+      ∀ {u : FullTrace left} {v : FullTrace right},
+        u ∈ convHullTrace left X →
+        v ∈ PrRelaxedSetChain r hr right {traceOutput u} →
+        LayerChain.spliceTrace u v ∈ PrRelaxedSetChain r hr whole X)
+    (hPr_bdd :
+      Bornology.IsBounded
+        (PrOutputSet
+          (alphaRadius_pos α (layerCount (pumpNetPr f₁ f₂ s)))
+          (pumpNetPr f₁ f₂ s) X)) :
+    lbproj 0 (reach f₂ (convexHull Real (reach f₁ X))) ≥
+      lbproj 0
+        (PrOutputSet
+          (alphaRadius_pos α (layerCount (pumpNetPr f₁ f₂ s)))
+          (pumpNetPr f₁ f₂ s) X) := by
+  let hr : 0 < alphaRadius α (layerCount (pumpNetPr f₁ f₂ s)) :=
+    alphaRadius_pos α (layerCount (pumpNetPr f₁ f₂ s))
+  let S := proj 0 (reach f₂ (convexHull Real (reach f₁ X)))
+  let T := proj 0 (PrOutputSet hr (pumpNetPr f₁ f₂ s) X)
+  have hbridge :
+      reach f₂ (convexHull Real (reach f₁ X)) ⊆
+        PrOutputSet hr (pumpNetPr f₁ f₂ s) X := by
+    simpa [hr] using
+      reach_conv_middle_subset_PrOutputSet_pump_of_glue_radius α hα f₁ f₂ s X hlarge hglue
   have hST : S ⊆ T := by
     intro z hz
     rcases hz with ⟨y, hy, rfl⟩
-    refine ⟨y, ?_, rfl⟩
-    change y ∈ PrOutputSetOfDecomposition (pumpDecomposition f₁ h₁ f₂ h₂ gap) X.feasibleSet
-    rw [PrOutputSetOnPolytope_pumpDecomposition_eq]
-    exact subset_convexHull Real _ hy
+    exact ⟨y, hbridge hy, rfl⟩
   have hS_nonempty : S.Nonempty := by
     apply proj_nonempty 0
     apply reach_nonempty
     apply convexHull_nonempty
     exact reach_nonempty f₁ hXne
-  have hT_bddBelow : BddBelow T :=
-    (PrOutputSetOfDecomposition_bounded D X.isBounded_feasibleSet).image_eval 0 |>.bddBelow
-  simpa [lbPr, D, S, T] using csInf_le_csInf hT_bddBelow hS_nonempty hST
+  have hT_bddBelow : BddBelow T := hPr_bdd.image_eval 0 |>.bddBelow
+  have hmain :
+      lbproj 0 (PrOutputSet hr (pumpNetPr f₁ f₂ s) X) ≤
+        lbproj 0 (reach f₂ (convexHull Real (reach f₁ X))) := by
+    simpa [lbproj, S, T] using csInf_le_csInf hT_bddBelow hS_nonempty hST
+  simpa [ge_iff_le, hr] using hmain
 
 /--
-Upper-bound half of the pumped cross-layer version of Lemma 4.1.
+ upper-bound half of Lemma 4.1.
 -/
-theorem lemma41Polytope_upper
-    {d d' : Nat} (f₁ : Net d d') (f₂ : Net d' 1)
-    (X : Polytope d) {r : Nat}
-    (h₁ : layerCount f₁ ≤ r) (h₂ : layerCount f₂ ≤ r)
-    (gap : Nat) (hXne : X.feasibleSet.Nonempty) :
-    ubproj 0 (reach f₂ (convexHull Real (reach f₁ X.feasibleSet))) ≤
-      ubPr (pumpDecomposition f₁ h₁ f₂ h₂ gap) X 0 := by
-  let D : BlockDecomposition r d 1 := pumpDecomposition f₁ h₁ f₂ h₂ gap
-  let S := proj 0 (reach f₂ (convexHull Real (reach f₁ X.feasibleSet)))
-  let T := proj 0 (PrOutputSetOfDecomposition D X.feasibleSet)
+theorem lemma41_upper
+    {d d' : Nat} (α : Real) (hα : α < 1)
+    (f₁ : Net d d') (f₂ : Net d' 1) (s : Nat) (X : Set (Coord d))
+    (hXne : X.Nonempty)
+    (hlarge :
+      let r := alphaRadius α (layerCount (pumpNetPr f₁ f₂ s))
+      r ≤ s)
+    (hglue :
+      let r := alphaRadius α (layerCount (pumpNetPr f₁ f₂ s))
+      let hr : 0 < r := alphaRadius_pos α (layerCount (pumpNetPr f₁ f₂ s))
+      let f₂' := prependIds (2 * (s - r)) f₂
+      let left : LayerChain.T d d' :=
+        LayerChain.appendChain (LayerChain.FlattenNet f₁) (LayerChain.idChain d' r)
+      let right : LayerChain.T d' 1 :=
+        LayerChain.appendChain (LayerChain.idChain d' r) (LayerChain.FlattenNet f₂')
+      let whole : LayerChain.T d 1 := LayerChain.appendChain left right
+      ∀ {u : FullTrace left} {v : FullTrace right},
+        u ∈ convHullTrace left X →
+        v ∈ PrRelaxedSetChain r hr right {traceOutput u} →
+        LayerChain.spliceTrace u v ∈ PrRelaxedSetChain r hr whole X)
+    (hPr_bdd :
+      Bornology.IsBounded
+        (PrOutputSet
+          (alphaRadius_pos α (layerCount (pumpNetPr f₁ f₂ s)))
+          (pumpNetPr f₁ f₂ s) X)) :
+    ubproj 0 (reach f₂ (convexHull Real (reach f₁ X))) ≤
+      ubproj 0
+        (PrOutputSet
+          (alphaRadius_pos α (layerCount (pumpNetPr f₁ f₂ s)))
+          (pumpNetPr f₁ f₂ s) X) := by
+  let hr : 0 < alphaRadius α (layerCount (pumpNetPr f₁ f₂ s)) :=
+    alphaRadius_pos α (layerCount (pumpNetPr f₁ f₂ s))
+  let S := proj 0 (reach f₂ (convexHull Real (reach f₁ X)))
+  let T := proj 0 (PrOutputSet hr (pumpNetPr f₁ f₂ s) X)
+  have hbridge :
+      reach f₂ (convexHull Real (reach f₁ X)) ⊆
+        PrOutputSet hr (pumpNetPr f₁ f₂ s) X := by
+    simpa [hr] using
+      reach_conv_middle_subset_PrOutputSet_pump_of_glue_radius α hα f₁ f₂ s X hlarge hglue
   have hST : S ⊆ T := by
     intro z hz
     rcases hz with ⟨y, hy, rfl⟩
-    refine ⟨y, ?_, rfl⟩
-    change y ∈ PrOutputSetOfDecomposition (pumpDecomposition f₁ h₁ f₂ h₂ gap) X.feasibleSet
-    rw [PrOutputSetOnPolytope_pumpDecomposition_eq]
-    exact subset_convexHull Real _ hy
+    exact ⟨y, hbridge hy, rfl⟩
   have hS_nonempty : S.Nonempty := by
     apply proj_nonempty 0
     apply reach_nonempty
     apply convexHull_nonempty
     exact reach_nonempty f₁ hXne
-  have hT_bddAbove : BddAbove T :=
-    (PrOutputSetOfDecomposition_bounded D X.isBounded_feasibleSet).image_eval 0 |>.bddAbove
-  simpa [ubPr, D, S, T] using csSup_le_csSup hT_bddAbove hS_nonempty hST
+  have hT_bddAbove : BddAbove T := hPr_bdd.image_eval 0 |>.bddAbove
+  simpa [ubproj, S, T, hr] using csSup_le_csSup hT_bddAbove hS_nonempty hST
 
 /--
-Combined polytope version of Lemma 4.1 for the explicit-decomposition
-cross-layer relaxation.
+Lemma 4.1 for the sliding-window relaxation with radius
+`r = max (1, floor (α * L))`.
 -/
 theorem lemma41
+    {d d' : Nat} (α : Real) (hα : α < 1)
+    (f₁ : Net d d') (f₂ : Net d' 1) (s : Nat) (X : Set (Coord d))
+    (hXne : X.Nonempty)
+    (hlarge :
+      let r := alphaRadius α (layerCount (pumpNetPr f₁ f₂ s))
+      r ≤ s)
+    (hglue :
+      let r := alphaRadius α (layerCount (pumpNetPr f₁ f₂ s))
+      let hr : 0 < r := alphaRadius_pos α (layerCount (pumpNetPr f₁ f₂ s))
+      let f₂' := prependIds (2 * (s - r)) f₂
+      let left : LayerChain.T d d' :=
+        LayerChain.appendChain (LayerChain.FlattenNet f₁) (LayerChain.idChain d' r)
+      let right : LayerChain.T d' 1 :=
+        LayerChain.appendChain (LayerChain.idChain d' r) (LayerChain.FlattenNet f₂')
+      let whole : LayerChain.T d 1 := LayerChain.appendChain left right
+      ∀ {u : FullTrace left} {v : FullTrace right},
+        u ∈ convHullTrace left X →
+        v ∈ PrRelaxedSetChain r hr right {traceOutput u} →
+        LayerChain.spliceTrace u v ∈ PrRelaxedSetChain r hr whole X)
+    (hPr_bdd :
+      Bornology.IsBounded
+        (PrOutputSet
+          (alphaRadius_pos α (layerCount (pumpNetPr f₁ f₂ s)))
+          (pumpNetPr f₁ f₂ s) X)) :
+    lbproj 0 (reach f₂ (convexHull Real (reach f₁ X))) ≥
+      lbproj 0
+        (PrOutputSet
+          (alphaRadius_pos α (layerCount (pumpNetPr f₁ f₂ s)))
+          (pumpNetPr f₁ f₂ s) X) ∧
+    ubproj 0 (reach f₂ (convexHull Real (reach f₁ X))) ≤
+      ubproj 0
+        (PrOutputSet
+          (alphaRadius_pos α (layerCount (pumpNetPr f₁ f₂ s)))
+          (pumpNetPr f₁ f₂ s) X) := by
+  refine ⟨?_, ?_⟩
+  · exact lemma41_lower α hα f₁ f₂ s X hXne hlarge hglue hPr_bdd
+  · exact lemma41_upper α hα f₁ f₂ s X hXne hlarge hglue hPr_bdd
+
+/--
+Lower-bound half of Lemma 4.1 for the actual sliding-window `P_r` relaxation on
+the pumped network with a `2r` identity buffer.
+-/
+theorem lemma41_fixedr_lower
     {d d' : Nat} (f₁ : Net d d') (f₂ : Net d' 1)
-    (X : Polytope d) {r : Nat}
+    (X : Polytope d) {r : Nat} (hr : 0 < r)
+    (_h₁ : layerCount f₁ ≤ r) (_h₂ : layerCount f₂ ≤ r)
+    (hXne : X.feasibleSet.Nonempty)
+    (hglue : PumpGlueCondition hr f₁ f₂ X.feasibleSet)
+    (hPr_bdd : Bornology.IsBounded (PrOutputSetOnPolytope hr (pumpNetPr f₁ f₂ r) X)) :
+    lbPrActual hr (pumpNetPr f₁ f₂ r) X 0 ≤
+      lbproj 0 (reach f₂ (convexHull Real (reach f₁ X.feasibleSet))) := by
+  let S := proj 0 (reach f₂ (convexHull Real (reach f₁ X.feasibleSet)))
+  let T := proj 0 (PrOutputSetOnPolytope hr (pumpNetPr f₁ f₂ r) X)
+  have hbridge :
+      reach f₂ (convexHull Real (reach f₁ X.feasibleSet)) ⊆
+        PrOutputSetOnPolytope hr (pumpNetPr f₁ f₂ r) X := by
+    exact reach_conv_middle_subset_PrOutputSet_pump hr f₁ f₂ X.feasibleSet hglue
+  have hST : S ⊆ T := by
+    intro z hz
+    rcases hz with ⟨y, hy, rfl⟩
+    exact ⟨y, hbridge hy, rfl⟩
+  have hS_nonempty : S.Nonempty := by
+    apply proj_nonempty 0
+    apply reach_nonempty
+    apply convexHull_nonempty
+    exact reach_nonempty f₁ hXne
+  have hT_bddBelow : BddBelow T := hPr_bdd.image_eval 0 |>.bddBelow
+  simpa [lbPrActual, S, T] using csInf_le_csInf hT_bddBelow hS_nonempty hST
+
+/--
+Upper-bound half of Lemma 4.1 for the actual sliding-window `P_r` relaxation on
+the pumped network with a `2r` identity buffer.
+-/
+theorem lemma41_fixedr_upper
+    {d d' : Nat} (f₁ : Net d d') (f₂ : Net d' 1)
+    (X : Polytope d) {r : Nat} (hr : 0 < r)
+    (_h₁ : layerCount f₁ ≤ r) (_h₂ : layerCount f₂ ≤ r)
+    (hXne : X.feasibleSet.Nonempty)
+    (hglue : PumpGlueCondition hr f₁ f₂ X.feasibleSet)
+    (hPr_bdd : Bornology.IsBounded (PrOutputSetOnPolytope hr (pumpNetPr f₁ f₂ r) X)) :
+    ubproj 0 (reach f₂ (convexHull Real (reach f₁ X.feasibleSet))) ≤
+      ubPrActual hr (pumpNetPr f₁ f₂ r) X 0 := by
+  let S := proj 0 (reach f₂ (convexHull Real (reach f₁ X.feasibleSet)))
+  let T := proj 0 (PrOutputSetOnPolytope hr (pumpNetPr f₁ f₂ r) X)
+  have hbridge :
+      reach f₂ (convexHull Real (reach f₁ X.feasibleSet)) ⊆
+        PrOutputSetOnPolytope hr (pumpNetPr f₁ f₂ r) X := by
+    exact reach_conv_middle_subset_PrOutputSet_pump hr f₁ f₂ X.feasibleSet hglue
+  have hST : S ⊆ T := by
+    intro z hz
+    rcases hz with ⟨y, hy, rfl⟩
+    exact ⟨y, hbridge hy, rfl⟩
+  have hS_nonempty : S.Nonempty := by
+    apply proj_nonempty 0
+    apply reach_nonempty
+    apply convexHull_nonempty
+    exact reach_nonempty f₁ hXne
+  have hT_bddAbove : BddAbove T := hPr_bdd.image_eval 0 |>.bddAbove
+  simpa [ubPrActual, S, T] using csSup_le_csSup hT_bddAbove hS_nonempty hST
+
+/--
+Lemma 4.1 for the actual sliding-window `P_r` relaxation.
+
+The pumped network is obtained by inserting `2r` identity layers between `f₁`
+and `f₂`. The only remaining explicit hypotheses are the trace-gluing bridge
+`hglue` and the boundedness of the pumped `P_r` output set.
+-/
+theorem lemma41_fixedr
+    {d d' : Nat} (f₁ : Net d d') (f₂ : Net d' 1)
+    (X : Polytope d) {r : Nat} (hr : 0 < r)
     (h₁ : layerCount f₁ ≤ r) (h₂ : layerCount f₂ ≤ r)
-    (gap : Nat) (hXne : X.feasibleSet.Nonempty) :
-    reach (pumpNet f₁ f₂ gap) X.feasibleSet = reach (Net.comp f₁ f₂) X.feasibleSet ∧
-      lbPr (pumpDecomposition f₁ h₁ f₂ h₂ gap) X 0 ≤
+    (hXne : X.feasibleSet.Nonempty)
+    (hglue : PumpGlueCondition hr f₁ f₂ X.feasibleSet)
+    (hPr_bdd : Bornology.IsBounded (PrOutputSetOnPolytope hr (pumpNetPr f₁ f₂ r) X)) :
+    reach (pumpNetPr f₁ f₂ r) X.feasibleSet = reach (Net.comp f₁ f₂) X.feasibleSet ∧
+      lbPrActual hr (pumpNetPr f₁ f₂ r) X 0 ≤
         lbproj 0 (reach f₂ (convexHull Real (reach f₁ X.feasibleSet))) ∧
       ubproj 0 (reach f₂ (convexHull Real (reach f₁ X.feasibleSet))) ≤
-        ubPr (pumpDecomposition f₁ h₁ f₂ h₂ gap) X 0 := by
-  refine ⟨reach_pumpNet f₁ f₂ gap X.feasibleSet,
-    lemma41Polytope_lower f₁ f₂ X h₁ h₂ gap hXne,
-    lemma41Polytope_upper f₁ f₂ X h₁ h₂ gap hXne⟩
+        ubPrActual hr (pumpNetPr f₁ f₂ r) X 0 := by
+  refine ⟨reach_pumpNetPr f₁ f₂ r X.feasibleSet,
+    lemma41_fixedr_lower f₁ f₂ X hr h₁ h₂ hXne hglue hPr_bdd,
+    lemma41_fixedr_upper f₁ f₂ X hr h₁ h₂ hXne hglue hPr_bdd⟩
 
 end
 
